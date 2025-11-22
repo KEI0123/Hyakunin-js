@@ -22,19 +22,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const room = inpRoom.value.trim() || null;
         const role = selRole.value || 'player';
         // connect
-        const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+        let url = document.getElementById('inpWsUrl').value.trim();
+        if (!url) {
+            // default to localhost:5001/ws which matches server_ws.py default
+            const host = location.hostname;
+            url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + host + ':5001/ws';
+        }
+        console.log('Connecting to WS URL:', url);
         ws = new WSClient();
         ws.onmessage = handleMessage;
-        ws.onopen = () => setStatus('接続済み');
-        ws.onclose = () => setStatus('切断');
+        ws.onopen = (ev) => { console.log('ws open', ev); setStatus('接続済み'); };
+        ws.onclose = (ev) => { console.log('ws close', ev); setStatus('切断'); };
+        ws.onerror = (ev) => { console.error('ws error', ev); };
         try {
+            // await connection; ws_client.connect now rejects if close/error before open
             await ws.connect(url);
         } catch (e) {
-            alert('WebSocket に接続できません: ' + e);
+            console.error('WebSocket connect failed:', e);
+            setStatus('切断');
+            alert('WebSocket に接続できません: ' + (e && e.message ? e.message : e));
             return;
         }
         // send join
         const joinMsg = { type: 'join', room_id: room, role: role, name: name };
+        console.log('sending join', joinMsg);
         ws.sendObj(joinMsg);
         setStatus('joining...');
     });

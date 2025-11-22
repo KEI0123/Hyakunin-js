@@ -10,6 +10,7 @@ class WSClient {
 
     connect(url) {
         return new Promise((resolve, reject) => {
+            let opened = false;
             try {
                 this.ws = new WebSocket(url);
             } catch (e) {
@@ -17,6 +18,7 @@ class WSClient {
                 return;
             }
             this.ws.addEventListener('open', (ev) => {
+                opened = true;
                 if (this.onopen) this.onopen(ev);
                 resolve();
             });
@@ -28,8 +30,18 @@ class WSClient {
                     console.warn('ws parse error', e);
                 }
             });
-            this.ws.addEventListener('close', (ev) => { if (this.onclose) this.onclose(ev); });
-            this.ws.addEventListener('error', (ev) => { if (this.onerror) this.onerror(ev); });
+            this.ws.addEventListener('close', (ev) => {
+                if (!opened) {
+                    reject(new Error('WebSocket closed before open (code=' + (ev.code || 0) + ')'));
+                }
+                if (this.onclose) this.onclose(ev);
+            });
+            this.ws.addEventListener('error', (ev) => {
+                if (!opened) {
+                    reject(new Error('WebSocket error before open'));
+                }
+                if (this.onerror) this.onerror(ev);
+            });
         });
     }
 
