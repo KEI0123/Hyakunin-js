@@ -91,6 +91,44 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
     rooms[room_id] = room
     return room
 
+
+def create_room_with_id(room_id: str, max_players: int = 2) -> Dict[str, Any]:
+    """
+    Create a room with a fixed room_id if not existing. Used to pre-create named rooms like room01..room10.
+    """
+    if room_id in rooms:
+        return rooms[room_id]
+    now = utcnow_iso()
+    card_letters = random.sample(list(range(100)), 10)
+    room = {
+        "room_id": room_id,
+        "created_at": now,
+        "players": [],
+        "spectators": [],
+        "owners": ["" for _ in range(10)],
+        "card_letters": card_letters,
+        "events": [],
+        "next_event_id": 1,
+        "meta": {"max_players": max_players},
+        "connections": set(),
+        "lock": asyncio.Lock(),
+    }
+    rooms[room_id] = room
+    return room
+
+
+def ensure_fixed_rooms(prefix: str = 'room', count: int = 10):
+    """
+    Ensure fixed rooms like room01..room10 exist at startup.
+    """
+    for i in range(1, count + 1):
+        rid = f"{prefix}{i:02d}"
+        create_room_with_id(rid)
+
+
+# Create fixed rooms at module import so they are always available
+ensure_fixed_rooms('room', 10)
+
 def add_event(room: Dict[str, Any], etype: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     指定ルームにイベントを追加して、そのイベントオブジェクトを返す。

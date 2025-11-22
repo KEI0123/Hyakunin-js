@@ -13,8 +13,54 @@ document.addEventListener('DOMContentLoaded', () => {
     let mySpectatorId = '';
     let myRole = '';
     let roomId = '';
+    let selectedTile = null; // index of lobby tile user clicked (0..9)
+    // Fixed room IDs room01..room10
+    const tileRoomIds = Array.from({ length: 10 }, (_, i) => {
+        const n = i + 1;
+        return 'room' + (n < 10 ? '0' + n : '' + n);
+    }); // map tile->roomId (fixed)
 
     function setStatus(s) { statusEl.textContent = s; }
+
+    // Lobby rendering: create 10 tiles (5x2)
+    const lobbyGrid = document.getElementById('lobbyGrid');
+    function renderLobby() {
+        lobbyGrid.innerHTML = '';
+        for (let i = 0; i < 10; ++i) {
+            const tile = document.createElement('div');
+            tile.className = 'roomTile' + (tileRoomIds[i] ? '' : ' empty');
+            tile.dataset.index = i;
+            const title = document.createElement('div');
+            title.className = 'title';
+            title.textContent = tileRoomIds[i] ? ('Room ' + tileRoomIds[i]) : ('空き部屋 #' + (i + 1));
+            const sub = document.createElement('div');
+            sub.className = 'sub';
+            sub.textContent = tileRoomIds[i] ? 'Click to join' : 'Click to create & join';
+            tile.appendChild(title);
+            tile.appendChild(sub);
+            tile.addEventListener('click', () => onTileClick(i, tile));
+            lobbyGrid.appendChild(tile);
+        }
+    }
+
+    function onTileClick(index, tileEl) {
+        // Save selected tile to update when server returns joined room_id
+        selectedTile = index;
+        // If tile already has a roomId, set inpRoom to that and join; otherwise create new room by joining with empty id
+        const targetRoom = tileRoomIds[index] || null;
+        inpRoom.value = targetRoom || '';
+        // Trigger join flow programmatically
+        btnJoin.click();
+    }
+
+    // show/hide views
+    const lobbyView = document.getElementById('lobbyView');
+    const gameView = document.getElementById('gameView');
+    function showGameView() { lobbyView.style.display = 'none'; gameView.style.display = 'flex'; renderer.resize(); }
+    function showLobbyView() { lobbyView.style.display = ''; gameView.style.display = 'none'; }
+
+    // initial lobby render
+    renderLobby();
 
     btnJoin.addEventListener('click', async () => {
         const name = inpName.value.trim();
@@ -59,6 +105,14 @@ document.addEventListener('DOMContentLoaded', () => {
             myRole = you.player_id ? 'player' : (you.spectator_id ? 'spectator' : '');
             setStatus('joined ' + roomId + ' as ' + myRole);
             chat.pushMessage('', 'joined: ' + roomId);
+            // If we joined as result of clicking a lobby tile, store mapping and update lobby UI
+            if (selectedTile !== null) {
+                tileRoomIds[selectedTile] = roomId;
+                renderLobby();
+                selectedTile = null;
+            }
+            // switch to game view once joined
+            showGameView();
         } else if (t === 'snapshot') {
             const room = msg.room || {};
             renderer.setState(room.owners || [], room.card_letters || []);

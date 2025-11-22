@@ -28,16 +28,24 @@
       </header>
 
       <main>
-        <canvas id="gameCanvas" width="900" height="600"></canvas>
-        <aside id="chatPanel">
-          <div id="roomInfo"></div>
-          <div id="playersList"></div>
-          <div id="messages" class="messages"></div>
-          <div id="chatInput">
-            <input id="inpChat" placeholder="type message" />
-            <button id="btnSend">Send</button>
-          </div>
-        </aside>
+        <!-- Lobby view: shown first -->
+        <div id="lobbyView">
+          <div id="lobbyGrid"></div>
+        </div>
+
+        <!-- Game view: hidden until a room is joined -->
+        <div id="gameView" style="display: none; width: 100%; display: flex; gap: 12px">
+          <canvas id="gameCanvas" width="900" height="600"></canvas>
+          <aside id="chatPanel">
+            <div id="roomInfo"></div>
+            <div id="playersList"></div>
+            <div id="messages" class="messages"></div>
+            <div id="chatInput">
+              <input id="inpChat" placeholder="type message" />
+              <button id="btnSend">Send</button>
+            </div>
+          </aside>
+        </div>
       </main>
     </div>
   </body>
