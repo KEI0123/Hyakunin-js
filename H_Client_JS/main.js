@@ -3,7 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderer = new Renderer(canvas);
     const chat = new ChatUI();
     const statusEl = document.getElementById('status');
-    const btnJoin = document.getElementById('btnJoin');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnCreate = document.getElementById('btnCreate');
     const inpName = document.getElementById('inpName');
     const inpRoom = document.getElementById('inpRoom');
     const selRole = document.getElementById('selRole');
@@ -49,8 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // If tile already has a roomId, set inpRoom to that and join; otherwise create new room by joining with empty id
         const targetRoom = tileRoomIds[index] || null;
         inpRoom.value = targetRoom || '';
-        // Trigger join flow programmatically
-        btnJoin.click();
+        // Trigger create flow programmatically (create/join)
+        btnCreate.click();
     }
 
     // show/hide views
@@ -62,33 +63,53 @@ document.addEventListener('DOMContentLoaded', () => {
     // initial lobby render
     renderLobby();
 
-    btnJoin.addEventListener('click', async () => {
-        const name = inpName.value.trim();
-        if (!name) { alert('名前を入力してください'); return; }
-        const room = inpRoom.value.trim() || null;
-        const role = selRole.value || 'player';
-        // connect
+    // Connect button: only establish WebSocket connection (do not send join)
+    btnConnect.addEventListener('click', async () => {
         let url = document.getElementById('inpWsUrl').value.trim();
-        if (!url) {
-            // default to production WebSocket endpoint
-            url = 'wss://hyakunin.onrender.com/ws';
-        }
-        console.log('Connecting to WS URL:', url);
+        if (!url) url = 'wss://hyakunin-js.onrender.com/ws';
+        if (ws) { console.log('Already connected'); setStatus('接続済み'); return; }
+        console.log('Connecting to WS URL (connect only):', url);
         ws = new WSClient();
         ws.onmessage = handleMessage;
         ws.onopen = (ev) => { console.log('ws open', ev); setStatus('接続済み'); };
-        ws.onclose = (ev) => { console.log('ws close', ev); setStatus('切断'); };
+        ws.onclose = (ev) => { console.log('ws close', ev); setStatus('切断'); ws = null; };
         ws.onerror = (ev) => { console.error('ws error', ev); };
         try {
-            // await connection; ws_client.connect now rejects if close/error before open
             await ws.connect(url);
         } catch (e) {
             console.error('WebSocket connect failed:', e);
             setStatus('切断');
             alert('WebSocket に接続できません: ' + (e && e.message ? e.message : e));
+            ws = null;
             return;
         }
-        // send join
+    });
+
+    // Create button: ensure connection then send join (this preserves previous "join" behavior)
+    btnCreate.addEventListener('click', async () => {
+        const name = inpName.value.trim();
+        if (!name) { alert('名前を入力してください'); return; }
+        const room = inpRoom.value.trim() || null;
+        const role = selRole.value || 'player';
+        let url = document.getElementById('inpWsUrl').value.trim();
+        if (!url) url = 'wss://hyakunin-js.onrender.com/ws';
+        if (!ws) {
+            console.log('Connecting to WS URL for create:', url);
+            ws = new WSClient();
+            ws.onmessage = handleMessage;
+            ws.onopen = (ev) => { console.log('ws open', ev); setStatus('接続済み'); };
+            ws.onclose = (ev) => { console.log('ws close', ev); setStatus('切断'); ws = null; };
+            ws.onerror = (ev) => { console.error('ws error', ev); };
+            try {
+                await ws.connect(url);
+            } catch (e) {
+                console.error('WebSocket connect failed:', e);
+                setStatus('切断');
+                alert('WebSocket に接続できません: ' + (e && e.message ? e.message : e));
+                ws = null;
+                return;
+            }
+        }
         const joinMsg = { type: 'join', room_id: room, role: role, name: name };
         console.log('sending join', joinMsg);
         ws.sendObj(joinMsg);
