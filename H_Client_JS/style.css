@@ -1,0 +1,80 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  margin: 0;
+  background: #0b0b10;
+  color: #ddd;
+}
+header {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #111;
+  border-bottom: 1px solid #222;
+}
+header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+#controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+input,
+select,
+button {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1a1a20;
+  color: #eee;
+}
+main {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+#gameCanvas {
+  background: #001;
+  border: 1px solid #333;
+  flex: 1;
+  max-width: 100%;
+}
+#chatPanel {
+  width: 320px;
+  background: #0f1114;
+  border: 1px solid #222;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#messages {
+  flex: 1;
+  overflow: auto;
+  background: #071018;
+  padding: 8px;
+  border-radius: 4px;
+}
+#chatInput {
+  display: flex;
+  gap: 6px;
+}
+.messages div {
+  margin-bottom: 6px;
+}
+#playersList {
+  font-size: 13px;
+  color: #9fd;
+}
+#roomInfo {
+  font-size: 13px;
+  color: #cdb;
+}
+#status {
+  color: #9c9;
+}

@@ -1,0 +1,5 @@
+flask
+flask-cors
+# WebSocket / ASGI server for new prototype
+fastapi
+uvicorn[standard]

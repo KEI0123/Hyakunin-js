@@ -1,0 +1,19 @@
+{
+  "cmake.sourceDirectory": "C:/Users/keisy/Documents/SDL2/Hyakunin/H_client",
+  "cmake.configureSettings": {
+    "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+  },
+  "cmake.generator": "Ninja",
+  "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
+  "files.associations": {
+    "*.ino": "arduino",
+    "xlocmes": "cpp",
+    "iostream": "cpp",
+    "chrono": "cpp",
+    "future": "cpp",
+    "system_error": "cpp",
+    "typeindex": "cpp",
+    "xlocale": "cpp",
+    "random": "cpp"
+  }
+}

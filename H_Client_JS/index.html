@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hyakunin (Web)</title>
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="ws_client.js"></script>
+    <script defer src="render.js"></script>
+    <script defer src="chat.js"></script>
+    <script defer src="main.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Hyakunin (Web)</h1>
+        <div id="controls">
+          <input id="inpName" placeholder="プレイヤー名" />
+          <input id="inpRoom" placeholder="部屋ID（空で作成）" />
+          <select id="selRole">
+            <option value="player">Player</option>
+            <option value="spectator">Spectator</option>
+          </select>
+          <button id="btnJoin">Join</button>
+          <span id="status">未接続</span>
+        </div>
+      </header>
+
+      <main>
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+        <aside id="chatPanel">
+          <div id="roomInfo"></div>
+          <div id="playersList"></div>
+          <div id="messages" class="messages"></div>
+          <div id="chatInput">
+            <input id="inpChat" placeholder="type message" />
+            <button id="btnSend">Send</button>
+          </div>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>
