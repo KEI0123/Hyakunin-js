@@ -24,9 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // connect
         let url = document.getElementById('inpWsUrl').value.trim();
         if (!url) {
-            // default to localhost:5001/ws which matches server_ws.py default
-            const host = location.hostname;
-            url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + host + ':5001/ws';
+            // default to production WebSocket endpoint
+            url = 'wss://hyakunin.onrender.com/ws';
         }
         console.log('Connecting to WS URL:', url);
         ws = new WSClient();
