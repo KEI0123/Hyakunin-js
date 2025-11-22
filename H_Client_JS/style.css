@@ -83,6 +83,13 @@ main {
   grid-template-columns: repeat(5, 1fr);
   gap: 12px;
 }
+
+/* Game view is hidden by default; main.js will show it when a room is joined */
+#gameView {
+  display: none;
+  width: 100%;
+  gap: 12px;
+}
 .roomTile {
   background: linear-gradient(180deg, #0c1220, #06101a);
   border: 1px solid #233;
