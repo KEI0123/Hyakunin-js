@@ -458,8 +458,29 @@ document.addEventListener('DOMContentLoaded', () => {
             // only players can take
             if (myRole !== 'player') { alert('参加（プレイヤー）として参加してください'); return; }
             if (!started) { alert('ゲームが開始されていません'); return; }
-            const out = { type: 'action', player_id: myPlayerId, action: 'take', payload: { id: cid, player: document.getElementById('inpName').value } };
-            if (ws) ws.sendObj(out);
+            // Only allow taking the card that is currently being read.
+            // If player clicks a non-current card, count as a mistake (penalty) and do NOT send take action.
+            try {
+                const current = (audioManager && typeof audioManager.currentCardPos !== 'undefined') ? audioManager.currentCardPos : null;
+                if (current !== null && current === cid) {
+                    const out = { type: 'action', player_id: myPlayerId, action: 'take', payload: { id: cid, player: document.getElementById('inpName').value } };
+                    if (ws) ws.sendObj(out);
+                } else {
+                    // wrong click: increment local penalty and notify user via chat
+                    if (typeof window._wrongClickPenalty === 'undefined') window._wrongClickPenalty = 0;
+                    window._wrongClickPenalty = (window._wrongClickPenalty || 0) + 1;
+                    chat.pushMessage('system', `wrong click: -1 (penalty total: ${window._wrongClickPenalty})`);
+                    // play an optional error sound (if available)
+                    try {
+                        if (window._errAudio === undefined) window._errAudio = new Audio('./dat/wav/error.wav');
+                        if (window._errAudio) { window._errAudio.currentTime = 0; window._errAudio.play().catch(()=>{}); }
+                    } catch (e) { }
+                }
+            } catch (e) {
+                // fallback: send take normally if something goes wrong
+                const out = { type: 'action', player_id: myPlayerId, action: 'take', payload: { id: cid, player: document.getElementById('inpName').value } };
+                if (ws) ws.sendObj(out);
+            }
         }
     });
 
