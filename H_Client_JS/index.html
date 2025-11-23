@@ -17,10 +17,7 @@
         <div id="controls">
           <input id="inpName" placeholder="プレイヤー名" />
           <input id="inpRoom" placeholder="部屋ID（空で作成）" />
-          <select id="selRole">
-            <option value="player">Player</option>
-            <option value="spectator" selected>Spectator</option>
-          </select>
+          <!-- role selection removed; server defaults to spectator when omitted -->
           <input id="inpWsUrl" placeholder="WebSocket URL (例: ws://localhost:5001/ws)" value="wss://hyakunin-js.onrender.com/ws" style="width: 260px" />
           <button id="btnConnect">Connect</button>
           <button id="btnCreate">Create</button>

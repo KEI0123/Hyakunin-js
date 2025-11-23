@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCreate = document.getElementById('btnCreate');
     const inpName = document.getElementById('inpName');
     const inpRoom = document.getElementById('inpRoom');
-    const selRole = document.getElementById('selRole');
+    // role selection removed; server will default to spectator when role omitted
     const btnBack = document.getElementById('btnBack');
     const btnBecome = document.getElementById('btnBecome');
     const btnWithdraw = document.getElementById('btnWithdraw');
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = inpName.value.trim();
         if (!name) { alert('名前を入力してください'); return; }
         const room = inpRoom.value.trim() || null;
-        const role = selRole.value || 'player';
+        // omit role so server uses its default (spectator when role not provided)
         let url = document.getElementById('inpWsUrl').value.trim();
         if (!url) url = 'wss://hyakunin-js.onrender.com/ws';
         if (!ws) {
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
         }
-        const joinMsg = { type: 'join', room_id: room, role: role, name: name };
+        const joinMsg = { type: 'join', room_id: room, name: name };
         console.log('sending join', joinMsg);
         ws.sendObj(joinMsg);
         setStatus('joining...');
