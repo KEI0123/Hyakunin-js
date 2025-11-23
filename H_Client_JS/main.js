@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingSnapshot = null; // store snapshot until start
     let currentPlayers = [];
     let currentSpectators = [];
+    let clockOffsetMs = 0; // server_time - local_time (ms)
+    const _pingPending = {};
+    const _pingSamples = [];
     let selectedTile = null; // index of lobby tile user clicked (0..9)
     // Fixed room IDs room01..room10
     const tileRoomIds = Array.from({ length: 10 }, (_, i) => {
@@ -183,6 +186,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const audioManager = new AudioManager();
 
+    // Schedule playback so multiple clients can start simultaneously.
+    // seq: play_sequence array, startAt: ISO timestamp string from server (UTC)
+    function scheduleSequenceStart(seq, startAt) {
+        try { audioManager.stop(); } catch (e) { }
+        if (!seq) return;
+        if (startAt) {
+            const serverMs = Date.parse(startAt);
+            // convert server time to local expected start time using clockOffsetMs
+            const localTarget = Math.round(serverMs - (clockOffsetMs || 0));
+            const now = Date.now();
+            const ms = localTarget - now;
+            if (ms > 100) {
+                // schedule in the future
+                try { chat.pushMessage('system', `Playback scheduled in ${Math.round(ms)} ms`); } catch (e) { }
+                setTimeout(() => {
+                    try { audioManager.startSequenceFromServer(seq); } catch (e) { console.warn('audio start fail', e); }
+                }, ms);
+                return;
+            }
+        }
+        // otherwise start immediately
+        try { audioManager.startSequenceFromServer(seq); } catch (e) { console.warn('audio start fail', e); }
+    }
+
     function setStatus(s) { statusEl.textContent = s; }
 
     // Lobby rendering: create 10 tiles (5x2)
@@ -244,6 +271,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ws.onerror = (ev) => { console.error('ws error', ev); };
             try {
                 await ws.connect(url);
+                // perform initial clock sync
+                try { syncClock(); } catch (e) { console.warn('clock sync failed', e); }
             } catch (e) {
                 console.error('WebSocket connect failed:', e);
                 setStatus('切断');
@@ -315,6 +344,30 @@ document.addEventListener('DOMContentLoaded', () => {
         btnBecome.disabled = true;
     }
 
+    function sendPing() {
+        if (!ws) return;
+        const t0 = Date.now();
+        _pingPending[t0] = t0;
+        try { ws.sendObj({ type: 'ping', payload: { client_ts: t0 } }); } catch (e) { }
+    }
+
+    function syncClock(rounds = 6, spacingMs = 200) {
+        _pingSamples.length = 0;
+        for (let i = 0; i < rounds; i++) {
+            setTimeout(() => sendPing(), i * spacingMs);
+        }
+        // compute aggregate after last ping should have returned (allow some margin)
+        setTimeout(() => {
+            if (_pingSamples.length === 0) return;
+            // compute median to reduce outliers
+            const sorted = _pingSamples.slice().sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            const median = (sorted.length % 2 === 1) ? sorted[mid] : ((sorted[mid - 1] + sorted[mid]) / 2);
+            clockOffsetMs = median;
+            try { chat.pushMessage('system', `Clock offset: ${Math.round(clockOffsetMs)} ms`); } catch (e) { }
+        }, rounds * spacingMs + 300);
+    }
+
     // Withdraw (player -> spectator) button
     if (btnWithdraw) {
         btnWithdraw.addEventListener('click', () => {
@@ -365,11 +418,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const room = msg.room || {};
             // Do not immediately display snapshot cards until the game is started.
             // Store snapshot and apply when started.
-            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null };
+            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null, start_at: room.start_at || null };
             if (started) {
                 renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
                 try {
-                    if (room.play_sequence) audioManager.startSequenceFromServer(room.play_sequence);
+                    if (room.play_sequence) scheduleSequenceStart(room.play_sequence, room.start_at || null);
                     else audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []);
                 } catch (e) { console.warn('audio start fail', e); }
             }
@@ -406,7 +459,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (btnStart) btnStart.style.display = 'none';
                 try {
                     const seq = (pendingSnapshot && pendingSnapshot.play_sequence) || (p.payload && p.payload.play_sequence) || null;
-                    if (seq) audioManager.startSequenceFromServer(seq);
+                    const startAt = (pendingSnapshot && pendingSnapshot.start_at) || (p.payload && p.payload.start_at) || null;
+                    if (seq) scheduleSequenceStart(seq, startAt);
                     else audioManager.startSequence(renderer.cardLetters, renderer.owners);
                 } catch (e) { console.warn('audio start fail', e); }
             }
@@ -440,6 +494,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const pname = payload.player || '(unknown)';
             const pen = payload.penalties || 0;
             chat.pushMessage('system', `${pname} お手つき -1 (total: ${pen})`);
+        } else if (t === 'pong') {
+            const payload = msg.payload || {};
+            const client_ts = payload.client_ts;
+            const server_ts = payload.server_ts;
+            if (client_ts && server_ts && _pingPending[client_ts]) {
+                const t0 = _pingPending[client_ts];
+                const t_recv = Date.now();
+                const server_ms = Date.parse(server_ts);
+                const rtt = t_recv - t0;
+                const offset = server_ms - (t0 + rtt / 2);
+                _pingSamples.push(offset);
+                delete _pingPending[client_ts];
+            }
         } else if (t === 'player_left' || t === 'spectator_left') {
             // If this is our own leave confirmation, resolve pending promise
             const payload = msg.payload || {};
@@ -500,7 +567,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btnStart) btnStart.style.display = 'none';
             try {
                 const seq = (payload && payload.play_sequence) || (pendingSnapshot && pendingSnapshot.play_sequence) || null;
-                if (seq) audioManager.startSequenceFromServer(seq);
+                const startAt = (payload && payload.start_at) || (pendingSnapshot && pendingSnapshot.start_at) || null;
+                if (seq) scheduleSequenceStart(seq, startAt);
                 else audioManager.startSequence(renderer.cardLetters, renderer.owners);
             } catch (e) { console.warn('audio start fail', e); }
         } else if (t === 'game_finished') {
