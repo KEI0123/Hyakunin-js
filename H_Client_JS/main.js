@@ -27,6 +27,92 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'room' + (n < 10 ? '0' + n : '' + n);
     }); // map tile->roomId (fixed)
 
+    // AudioManager: preload kiri00..kiri99 and manage sequential playback
+    class AudioManager {
+        constructor(basePath = './dat/wav/kiri/', count = 100, ext = '.wav') {
+            this.basePath = basePath;
+            this.count = count;
+            this.ext = ext;
+            this.audios = new Array(count).fill(null);
+            this.queue = []; // {cardPos, letter}
+            this.pointer = 0;
+            this.playing = false;
+            this.waitingForTake = false;
+            this.currentCardPos = null;
+            this._preloadAll();
+        }
+
+        _preloadAll() {
+            for (let i = 0; i < this.count; i++) {
+                const name = 'kiri' + String(i).padStart(2, '0') + this.ext;
+                const a = new Audio(this.basePath + name);
+                a.preload = 'auto';
+                a.addEventListener('error', (e) => console.warn('audio load error', name, e));
+                this.audios[i] = a;
+            }
+        }
+
+        startSequence(cardLetters, owners) {
+            this.stop();
+            this.queue = [];
+            // build queue in display order 0..9, include only visible (owners empty)
+            for (let i = 0; i < 10; i++) {
+                if (!owners || !owners[i]) {
+                    const letter = (cardLetters && typeof cardLetters[i] !== 'undefined') ? (cardLetters[i] | 0) : 0;
+                    this.queue.push({ cardPos: i, letter: Math.max(0, Math.min(99, letter)) });
+                }
+            }
+            this.pointer = 0;
+            this.playing = false;
+            this.waitingForTake = false;
+            this.currentCardPos = null;
+            if (this.queue.length > 0) this._playCurrent();
+        }
+
+        _playCurrent() {
+            if (this.pointer < 0 || this.pointer >= this.queue.length) { this.playing = false; return; }
+            const item = this.queue[this.pointer];
+            this.currentCardPos = item.cardPos;
+            const audio = this.audios[item.letter];
+            if (!audio) { console.warn('missing audio for', item.letter); this.waitingForTake = true; return; }
+            try { audio.currentTime = 0; audio.play().catch(e => console.warn('audio play fail', e)); } catch (e) { console.warn('audio play exception', e); }
+            this.playing = true;
+            this.waitingForTake = true; // block advancing until card is taken
+        }
+
+        onCardTaken(cardPos) {
+            // If the currently-waiting card was taken, advance after 3s
+            if (!this.playing) return;
+            if (this.currentCardPos === cardPos && this.waitingForTake) {
+                this.waitingForTake = false;
+                setTimeout(() => {
+                    this.pointer++;
+                    if (this.pointer < this.queue.length) this._playCurrent();
+                    else this.playing = false;
+                }, 3000);
+            } else {
+                // remove any future queue entries that correspond to this cardPos
+                this.queue = this.queue.filter((it, idx) => !(it.cardPos === cardPos && idx > this.pointer));
+            }
+        }
+
+        stop() {
+            // stop current audio if playing
+            if (this.playing && this.queue[this.pointer]) {
+                const it = this.queue[this.pointer];
+                const a = this.audios[it.letter];
+                if (a) { try { a.pause(); a.currentTime = 0; } catch (e) { } }
+            }
+            this.queue = [];
+            this.pointer = 0;
+            this.playing = false;
+            this.waitingForTake = false;
+            this.currentCardPos = null;
+        }
+    }
+
+    const audioManager = new AudioManager();
+
     function setStatus(s) { statusEl.textContent = s; }
 
     // Lobby rendering: create 10 tiles (5x2)
@@ -138,6 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chat && typeof chat.clearMessages === 'function') chat.clearMessages();
         // clear renderer state
         renderer.setState(new Array(10).fill(''), new Array(10).fill(0));
+        try { audioManager.stop(); } catch (e) { }
         showLobbyView();
     });
 
@@ -211,6 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [] };
             if (started) {
                 renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
+                try { audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []); } catch (e) { console.warn('audio start fail', e); }
             }
             // players -> array of {player_id, name}
             const players = (room.players || []).map(p => [p.player_id, p.name]);
@@ -230,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const owners = renderer.owners.slice();
                     owners[cid] = playerName || owners[cid];
                     renderer.setState(owners, renderer.cardLetters);
+                    try { audioManager.onCardTaken(cid); } catch (e) { }
                     chat.pushMessage('', (playerName || '') + ' took ' + cid);
                 }
             }
@@ -242,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 // hide start button for everyone after start
                 if (btnStart) btnStart.style.display = 'none';
+                try { audioManager.startSequence(renderer.cardLetters, renderer.owners); } catch (e) { console.warn('audio start fail', e); }
             }
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
@@ -294,6 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderer.setState(pendingSnapshot.owners || [], pendingSnapshot.card_letters || []);
             }
             if (btnStart) btnStart.style.display = 'none';
+            try { audioManager.startSequence(renderer.cardLetters, renderer.owners); } catch (e) { console.warn('audio start fail', e); }
         } else if (t === 'game_finished') {
             const payload = msg.payload || {};
             // show winner label if available, else show draw or winner name
@@ -306,6 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // mark not started
             started = false;
+            try { audioManager.stop(); } catch (e) { }
             // optional: reveal final counts in chat
             if (payload.counts) {
                 for (const [name, cnt] of Object.entries(payload.counts)) {
