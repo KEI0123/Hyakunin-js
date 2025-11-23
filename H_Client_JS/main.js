@@ -392,6 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (you.spectator_id) mySpectatorId = you.spectator_id;
             myRole = you.player_id ? 'player' : (you.spectator_id ? 'spectator' : '');
             setStatus('joined ' + roomId + ' as ' + myRole);
+            // Clear previous room chat when joining a new room
+            if (chat && typeof chat.clearMessages === 'function') chat.clearMessages();
             chat.pushMessage('', 'joined: ' + roomId);
             // If we joined as result of clicking a lobby tile, store mapping and update lobby UI
             if (selectedTile !== null) {

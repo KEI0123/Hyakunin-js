@@ -37,6 +37,10 @@ class ChatUI {
     }
 
     setSendCallback(cb) { this.sendCb = cb; }
+
+    clearMessages() {
+        if (this.messagesEl) this.messagesEl.innerHTML = '';
+    }
 }
 
 window.ChatUI = ChatUI;
