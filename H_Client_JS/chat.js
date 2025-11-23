@@ -24,7 +24,16 @@ class ChatUI {
 
     setRoomInfo(roomId, players, spectators, myName) {
         this.roomInfoEl.textContent = roomId ? ('Room ' + roomId) : '';
-        this.playersEl.textContent = 'Players: ' + (players.map(p => p[1]).join(', '));
+        // Render players and spectators inline for a compact view
+        // players: array of [id, name], spectators: array of [id, name]
+        const playerNames = players.map(p => p[1]).join(', ');
+        const specNames = spectators.map(s => s[1]).join(', ');
+        // Build inline HTML with labels and small class names for styling
+        let html = '';
+        html += '<span class="players-label">Players:</span> ' + (playerNames || '—');
+        html += ' &nbsp; ';
+        html += '<span class="spec-label">Specs:</span> ' + (specNames || '—');
+        this.playersEl.innerHTML = html;
     }
 
     setSendCallback(cb) { this.sendCb = cb; }
