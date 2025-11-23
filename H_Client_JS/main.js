@@ -93,6 +93,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (this.queue.length > 0) this._playCurrent();
         }
 
+        // Use server-provided sequence (array of {cardPos: int|null, letter: int})
+        startSequenceFromServer(seq) {
+            if (!Array.isArray(seq)) return;
+            this.stop();
+            this.queue = seq.map(it => ({ cardPos: (typeof it.cardPos === 'number' ? it.cardPos : null), letter: (it.letter | 0) }));
+            this.pointer = 0;
+            this.playing = false;
+            this.waitingForTake = false;
+            this.currentCardPos = null;
+            if (this.queue.length > 0) this._playCurrent();
+        }
+
         _playCurrent() {
             if (this.pointer < 0 || this.pointer >= this.queue.length) { this.playing = false; return; }
             const item = this.queue[this.pointer];
@@ -351,10 +363,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const room = msg.room || {};
             // Do not immediately display snapshot cards until the game is started.
             // Store snapshot and apply when started.
-            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [] };
+            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null };
             if (started) {
                 renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
-                try { audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []); } catch (e) { console.warn('audio start fail', e); }
+                try {
+                    if (room.play_sequence) audioManager.startSequenceFromServer(room.play_sequence);
+                    else audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []);
+                } catch (e) { console.warn('audio start fail', e); }
             }
             // players -> array of {player_id, name}
             const players = (room.players || []).map(p => [p.player_id, p.name]);
@@ -387,7 +402,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 // hide start button for everyone after start
                 if (btnStart) btnStart.style.display = 'none';
-                try { audioManager.startSequence(renderer.cardLetters, renderer.owners); } catch (e) { console.warn('audio start fail', e); }
+                try {
+                    const seq = (pendingSnapshot && pendingSnapshot.play_sequence) || (p.payload && p.payload.play_sequence) || null;
+                    if (seq) audioManager.startSequenceFromServer(seq);
+                    else audioManager.startSequence(renderer.cardLetters, renderer.owners);
+                } catch (e) { console.warn('audio start fail', e); }
             }
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
@@ -445,7 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderer.setState(pendingSnapshot.owners || [], pendingSnapshot.card_letters || []);
             }
             if (btnStart) btnStart.style.display = 'none';
-            try { audioManager.startSequence(renderer.cardLetters, renderer.owners); } catch (e) { console.warn('audio start fail', e); }
+            try {
+                const seq = (payload && payload.play_sequence) || (pendingSnapshot && pendingSnapshot.play_sequence) || null;
+                if (seq) audioManager.startSequenceFromServer(seq);
+                else audioManager.startSequence(renderer.cardLetters, renderer.owners);
+            } catch (e) { console.warn('audio start fail', e); }
         } else if (t === 'game_finished') {
             const payload = msg.payload || {};
             // show winner label if available, else show draw or winner name

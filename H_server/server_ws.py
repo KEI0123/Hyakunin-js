@@ -105,6 +105,8 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
         "card_letters": card_letters,
         # penalties: player_name -> penalty count (mistakes)
         "penalties": {},
+        # play_sequence: list of { "cardPos": int|null, "letter": int }
+        "play_sequence": [],
         # whether a game in this room has been started
         "started": False,
         "events": [],
@@ -133,6 +135,7 @@ def create_room_with_id(room_id: str, max_players: int = 2) -> Dict[str, Any]:
         "owners": ["" for _ in range(10)],
         "card_letters": card_letters,
         "penalties": {},
+        "play_sequence": [],
         "started": False,
         "events": [],
         "next_event_id": 1,
@@ -263,6 +266,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "spectators": room["spectators"],
                 "owners": room.get("owners", []),
                 "card_letters": room.get("card_letters", []),
+                "play_sequence": room.get("play_sequence", []),
                 "started": room.get("started", False),
             },
             "next_event_id": room["next_event_id"],
@@ -359,10 +363,23 @@ async def websocket_endpoint(websocket: WebSocket):
                         # reset ownership and deal new card letters
                         room["owners"] = ["" for _ in range(10)]
                         room["card_letters"] = random.sample(list(range(100)), 10)
+                        # build a play sequence: include the 10 table cards (with positions) and 9 random off-table letters
+                        table_letters = room["card_letters"]
+                        seq = []
+                        present = set([int(x) for x in table_letters])
+                        for i, lt in enumerate(table_letters):
+                            seq.append({"cardPos": i, "letter": int(lt)})
+                        pool = [v for v in range(100) if v not in present]
+                        random.shuffle(pool)
+                        extra = pool[:9]
+                        for v in extra:
+                            seq.append({"cardPos": None, "letter": int(v)})
+                        random.shuffle(seq)
+                        room["play_sequence"] = seq
                         # reset penalties at start of new game
                         room["penalties"] = {}
                         room["started"] = True
-                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name})
+                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", [])})
                         # prepare snapshot to broadcast
                         snapshot = {
                             "type": "snapshot",
@@ -372,6 +389,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "spectators": room["spectators"],
                                 "owners": room.get("owners", []),
                                 "card_letters": room.get("card_letters", []),
+                                "play_sequence": room.get("play_sequence", []),
                                 "started": room.get("started", False),
                             },
                             "next_event_id": room["next_event_id"],
@@ -562,6 +580,7 @@ async def get_room(room_id: str):
         "spectators": [{"spectator_id": s["spectator_id"], "name": s["name"]} for s in r["spectators"]],
         "owners": r.get("owners", []),
         "card_letters": r.get("card_letters", []),
+        "play_sequence": r.get("play_sequence", []),
         "next_event_id": r["next_event_id"],
         "started": r.get("started", False),
     }
