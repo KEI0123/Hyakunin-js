@@ -19,6 +19,9 @@ class Renderer {
         this.owners = new Array(10).fill('');
         // don't reveal cards until the game starts; `setState` will reveal
         this.revealed = false;
+        // overlay text to display large messages on canvas
+        this.overlayText = null;
+        this.overlayExpires = 0;
 
         window.addEventListener('resize', () => this.resize());
         this.resize();
@@ -36,6 +39,9 @@ class Renderer {
         if (cardLetters) this.cardLetters = cardLetters.slice();
         // mark cards as revealed when state is explicitly set
         this.revealed = true;
+        // clear overlay when state changes (new game state)
+        this.overlayText = null;
+        this.overlayExpires = 0;
         this.draw();
     }
 
@@ -75,6 +81,36 @@ class Renderer {
                 this._drawCard(x, oppY, cardW, cardH, this.cardLetters[idx], 0);
             }
         }
+
+        // draw overlay text if present
+        if (this.overlayText && Date.now() < this.overlayExpires) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(0, Math.floor(ch / 2) - 70, cw, 140);
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // choose font size based on canvas width
+            const fontSize = Math.max(28, Math.floor(cw / 12));
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillText(this.overlayText, Math.floor(cw / 2), Math.floor(ch / 2));
+            ctx.restore();
+        } else {
+            // clear expired overlay
+            if (this.overlayText && Date.now() >= this.overlayExpires) {
+                this.overlayText = null;
+                this.overlayExpires = 0;
+            }
+        }
+    }
+
+    // display a large overlay message for `durationMs` milliseconds
+    setOverlay(text, durationMs = 5000) {
+        this.overlayText = text;
+        this.overlayExpires = Date.now() + (durationMs || 5000);
+        this.draw();
+        // schedule a redraw to clear after expiry
+        setTimeout(() => { try { this.draw(); } catch (e) { } }, durationMs + 50);
     }
 
     _drawCard(x, y, w, h, letterIdx, angle) {

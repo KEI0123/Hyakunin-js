@@ -400,12 +400,16 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (t === 'game_finished') {
             const payload = msg.payload || {};
             // show winner label if available, else show draw or winner name
-            if (payload.winner_label) {
-                chat.pushMessage('system', 'winner ' + payload.winner_label);
-            } else if (payload.winner) {
+            // Prefer showing the winner player's name when available
+            if (payload.winner) {
                 chat.pushMessage('system', 'winner ' + payload.winner);
+                try { renderer.setOverlay('Winner: ' + payload.winner, 6000); } catch (e) { }
+            } else if (payload.winner_label) {
+                chat.pushMessage('system', 'winner ' + payload.winner_label);
+                try { renderer.setOverlay('Winner: ' + payload.winner_label, 6000); } catch (e) { }
             } else {
                 chat.pushMessage('system', 'draw');
+                try { renderer.setOverlay('Draw', 6000); } catch (e) { }
             }
             // mark not started
             started = false;
@@ -485,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // play an optional error sound (if available)
                     try {
                         if (window._errAudio === undefined) window._errAudio = new Audio('./dat/wav/error.wav');
-                        if (window._errAudio) { window._errAudio.currentTime = 0; window._errAudio.play().catch(()=>{}); }
+                        if (window._errAudio) { window._errAudio.currentTime = 0; window._errAudio.play().catch(() => { }); }
                     } catch (e) { }
                 }
             } catch (e) {
