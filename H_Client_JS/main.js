@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inpName = document.getElementById('inpName');
     const inpRoom = document.getElementById('inpRoom');
     const selRole = document.getElementById('selRole');
+    const btnBack = document.getElementById('btnBack');
 
     let ws = null;
     let myPlayerId = '';
@@ -114,6 +115,35 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('sending join', joinMsg);
         ws.sendObj(joinMsg);
         setStatus('joining...');
+    });
+
+    // Back button: send leave, clear local state, show lobby
+    btnBack.addEventListener('click', async () => {
+        // send leave if connected and we have role/id
+        if (ws && (myPlayerId || mySpectatorId || myRole)) {
+            const leaveMsg = { type: 'leave', role: myRole };
+            if (myPlayerId) leaveMsg.player_id = myPlayerId;
+            if (mySpectatorId) leaveMsg.spectator_id = mySpectatorId;
+            try {
+                ws.sendObj(leaveMsg);
+            } catch (e) {
+                console.warn('leave send failed', e);
+            }
+            try {
+                ws.close();
+            } catch (e) {}
+            ws = null;
+        }
+        // reset client-side room/player state
+        myPlayerId = '';
+        mySpectatorId = '';
+        myRole = '';
+        roomId = '';
+        setStatus('ロビー');
+        if (chat && typeof chat.clearMessages === 'function') chat.clearMessages();
+        // clear renderer state
+        renderer.setState(new Array(10).fill(''), new Array(10).fill(0));
+        showLobbyView();
     });
 
     function handleMessage(msg) {
