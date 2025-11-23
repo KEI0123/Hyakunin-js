@@ -478,7 +478,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     // wrong click: increment local penalty and notify user via chat
                     if (typeof window._wrongClickPenalty === 'undefined') window._wrongClickPenalty = 0;
                     window._wrongClickPenalty = (window._wrongClickPenalty || 0) + 1;
-                    chat.pushMessage('system', `wrong click: -1 (penalty total: ${window._wrongClickPenalty})`);
                     // notify server about mistake so it can broadcast and apply penalty to scoring
                     try {
                         if (ws && myPlayerId) {
