@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inpRoom = document.getElementById('inpRoom');
     // role selection removed; server will default to spectator when role omitted
     const btnBack = document.getElementById('btnBack');
+    const btnStart = document.getElementById('btnStart');
     const btnBecome = document.getElementById('btnBecome');
     const btnWithdraw = document.getElementById('btnWithdraw');
 
@@ -17,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let myRole = '';
     let pendingLeaveResolver = null;
     let roomId = '';
+    let started = false; // whether the game has started (controls card visibility)
+    let pendingSnapshot = null; // store snapshot until start
     let selectedTile = null; // index of lobby tile user clicked (0..9)
     // Fixed room IDs room01..room10
     const tileRoomIds = Array.from({ length: 10 }, (_, i) => {
@@ -170,6 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleMessage(msg) {
         const t = msg.type;
+        // DEBUG: uncomment to inspect incoming messages
+        // console.log('WS IN:', msg);
         if (t === 'joined') {
             roomId = msg.room_id;
             const you = msg.you || {};
@@ -184,13 +189,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderLobby();
                 selectedTile = null;
             }
-            // switch to game view once joined
+            // switch to game view once joined (do not show cards until started)
+            started = false;
+            pendingSnapshot = null;
             showGameView();
             if (btnBecome) btnBecome.disabled = (myRole === 'player');
             if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
+            // show start button only for players
+            if (btnStart) {
+                if (myRole === 'player') {
+                    btnStart.style.display = '';
+                    btnStart.disabled = false;
+                } else {
+                    btnStart.style.display = 'none';
+                }
+            }
         } else if (t === 'snapshot') {
             const room = msg.room || {};
-            renderer.setState(room.owners || [], room.card_letters || []);
+            // Do not immediately display snapshot cards until the game is started.
+            // Store snapshot and apply when started.
+            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [] };
+            if (started) {
+                renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
+            }
             // players -> array of {player_id, name}
             const players = (room.players || []).map(p => [p.player_id, p.name]);
             const spectators = (room.spectators || []).map(s => [s.spectator_id, s.name]);
@@ -211,6 +232,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderer.setState(owners, renderer.cardLetters);
                     chat.pushMessage('', (playerName || '') + ' took ' + cid);
                 }
+            }
+            // start action: reveal cards and enable gameplay
+            else if (p && p.action && p.action === 'start') {
+                // mark started and apply pending snapshot if present
+                started = true;
+                if (pendingSnapshot) {
+                    renderer.setState(pendingSnapshot.owners || [], pendingSnapshot.card_letters || []);
+                }
+                // hide start button for everyone after start
+                if (btnStart) btnStart.style.display = 'none';
             }
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
@@ -242,9 +273,27 @@ document.addEventListener('DOMContentLoaded', () => {
             chat.pushMessage('', 'promoted to player');
             if (btnBecome) btnBecome.disabled = (myRole === 'player');
             if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
+            // show start button when promoted to player
+            if (btnStart) {
+                if (myRole === 'player') {
+                    btnStart.style.display = '';
+                    btnStart.disabled = false;
+                } else {
+                    btnStart.style.display = 'none';
+                }
+            }
         } else if (t === 'chat_message') {
             const payload = msg.payload || {};
             chat.pushMessage(payload.from || '', payload.message || '');
+        } else if (t === 'game_started') {
+            // server indicates the game was started by a player
+            const payload = msg.payload || {};
+            chat.pushMessage('system', (payload.player || 'Someone') + ' started the game');
+            started = true;
+            if (pendingSnapshot) {
+                renderer.setState(pendingSnapshot.owners || [], pendingSnapshot.card_letters || []);
+            }
+            if (btnStart) btnStart.style.display = 'none';
         } else if (t === 'demoted') {
             const you = msg.you || {};
             if (you.spectator_id) mySpectatorId = you.spectator_id;
@@ -254,6 +303,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chat.pushMessage('', 'you are now spectator');
             if (btnBecome) btnBecome.disabled = (myRole === 'player');
             if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
+            // hide start button if demoted to spectator
+            if (btnStart) btnStart.style.display = 'none';
         } else if (t === 'error') {
             chat.pushMessage('server', 'error: ' + (msg.error || 'unknown'));
         } else {
@@ -261,7 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // some server events wrap payload differently; try to update owners/card_letters when present
             const room = msg.room;
             if (room && (room.owners || room.card_letters)) {
-                renderer.setState(room.owners || [], room.card_letters || []);
+                // store or apply depending on started state
+                pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [] };
+                if (started) renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
             }
         }
     }
@@ -287,8 +340,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (renderer.owners[cid]) return;
             // only players can take
             if (myRole !== 'player') { alert('参加（プレイヤー）として参加してください'); return; }
+            if (!started) { alert('ゲームが開始されていません'); return; }
             const out = { type: 'action', player_id: myPlayerId, action: 'take', payload: { id: cid, player: document.getElementById('inpName').value } };
             if (ws) ws.sendObj(out);
         }
     });
+
+    // Start button: only shown to players; send start action to server
+    if (btnStart) {
+        btnStart.addEventListener('click', () => {
+            if (!ws) { alert('未接続です'); return; }
+            if (myRole !== 'player') { alert('プレイヤーでないと開始できません'); return; }
+            // send generic action 'start' so server will broadcast a player_action event
+            const out = { type: 'action', player_id: myPlayerId, action: 'start', payload: {} };
+            try { ws.sendObj(out); } catch (e) { console.warn('start send failed', e); }
+            // disable button locally to avoid double sends; will be hidden when start event arrives
+            btnStart.disabled = true;
+        });
+    }
 });

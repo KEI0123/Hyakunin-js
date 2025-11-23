@@ -16,6 +16,8 @@ class Renderer {
         this.sheetImg.src = './dat/image/m_sheet.png';
         this.cardLetters = new Array(10).fill(0);
         this.owners = new Array(10).fill('');
+        // don't reveal cards until the game starts; `setState` will reveal
+        this.revealed = false;
         window.addEventListener('resize', () => this.resize());
         this.resize();
     }
@@ -30,6 +32,8 @@ class Renderer {
     setState(owners, cardLetters) {
         if (owners) this.owners = owners.slice();
         if (cardLetters) this.cardLetters = cardLetters.slice();
+        // mark cards as revealed when state is explicitly set
+        this.revealed = true;
         this.draw();
     }
 
@@ -41,6 +45,10 @@ class Renderer {
         ctx.fillRect(0, 0, cw, ch);
 
         const aspect = 740 / 530;
+        // if not yet revealed, draw only background and return
+        if (!this.revealed) {
+            return;
+        }
         const cardW = Math.floor(cw / 6);
         const cardH = Math.floor(cardW * aspect);
         const gap = Math.floor(cardW / 6);

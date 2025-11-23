@@ -103,6 +103,8 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
         "owners": ["" for _ in range(10)],
         # card_letters: 各カードに対応する数値 ID
         "card_letters": card_letters,
+        # whether a game in this room has been started
+        "started": False,
         "events": [],
         "next_event_id": 1,
         "meta": {"max_players": max_players},
@@ -128,6 +130,7 @@ def create_room_with_id(room_id: str, max_players: int = 2) -> Dict[str, Any]:
         "spectators": [],
         "owners": ["" for _ in range(10)],
         "card_letters": card_letters,
+        "started": False,
         "events": [],
         "next_event_id": 1,
         "meta": {"max_players": max_players},
@@ -257,6 +260,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "spectators": room["spectators"],
                 "owners": room.get("owners", []),
                 "card_letters": room.get("card_letters", []),
+                "started": room.get("started", False),
             },
             "next_event_id": room["next_event_id"],
         }
@@ -294,9 +298,35 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         room["owners"][cid] = player_name
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": {"id": cid, "player": player_name}})
+                    elif action == "start":
+                        # Start a new game in the room: reset owners and deal new card letters
+                        # Only allow if sender is a valid player (checked above)
+                        player_name = found.get("name")
+                        # reset ownership and deal new card letters
+                        room["owners"] = ["" for _ in range(10)]
+                        room["card_letters"] = random.sample(list(range(100)), 10)
+                        room["started"] = True
+                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name})
+                        # prepare snapshot to broadcast
+                        snapshot = {
+                            "type": "snapshot",
+                            "room": {
+                                "room_id": room["room_id"],
+                                "players": room["players"],
+                                "spectators": room["spectators"],
+                                "owners": room.get("owners", []),
+                                "card_letters": room.get("card_letters", []),
+                                "started": room.get("started", False),
+                            },
+                            "next_event_id": room["next_event_id"],
+                        }
                     else:
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": payload})
+                # broadcast event
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
+                # if start, broadcast snapshot as well
+                if action == "start":
+                    await broadcast(room, snapshot)
             elif t == "become_player":
                 # spectator -> player 昇格リクエスト
                 # クライアント側は通常ボタン押下でこのメッセージを送る
@@ -471,6 +501,7 @@ async def get_room(room_id: str):
         "owners": r.get("owners", []),
         "card_letters": r.get("card_letters", []),
         "next_event_id": r["next_event_id"],
+        "started": r.get("started", False),
     }
 
 
