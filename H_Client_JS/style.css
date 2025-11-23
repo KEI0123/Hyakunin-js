@@ -54,8 +54,8 @@ main {
   gap: 8px;
 }
 #messages {
-  flex: 1;
-  overflow: auto;
+  height: 100vh;
+  overflow-y: auto;
   background: #071018;
   padding: 8px;
   border-radius: 4px;
