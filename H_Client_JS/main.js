@@ -55,15 +55,32 @@ document.addEventListener('DOMContentLoaded', () => {
         startSequence(cardLetters, owners) {
             this.stop();
             this.queue = [];
-            // build queue from visible cards (owners empty) but shuffle so order is random
+            // build queue: include visible table cards (with cardPos) and add 9 random off-table cards
             const items = [];
+            const tableLetters = Array.isArray(cardLetters) ? cardLetters.slice(0, 10) : [];
+            const presentSet = new Set(tableLetters.map(x => x | 0));
+            // add visible table cards (preserve their card positions)
             for (let i = 0; i < 10; i++) {
                 if (!owners || !owners[i]) {
-                    const letter = (cardLetters && typeof cardLetters[i] !== 'undefined') ? (cardLetters[i] | 0) : 0;
+                    const letter = (tableLetters && typeof tableLetters[i] !== 'undefined') ? (tableLetters[i] | 0) : 0;
                     items.push({ cardPos: i, letter: Math.max(0, Math.min(99, letter)) });
                 }
             }
-            // Fisher-Yates shuffle
+            // select 9 random numbers from 0..99 excluding presentSet
+            const pool = [];
+            for (let v = 0; v < 100; v++) {
+                if (!presentSet.has(v)) pool.push(v);
+            }
+            // shuffle pool then take first 9
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+            }
+            const extraCount = Math.min(9, pool.length);
+            for (let k = 0; k < extraCount; k++) {
+                items.push({ cardPos: null, letter: pool[k] });
+            }
+            // finally shuffle the whole 19-item list so playback order is random across both types
             for (let i = items.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 const tmp = items[i]; items[i] = items[j]; items[j] = tmp;
@@ -81,10 +98,35 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = this.queue[this.pointer];
             this.currentCardPos = item.cardPos;
             const audio = this.audios[item.letter];
-            if (!audio) { console.warn('missing audio for', item.letter); this.waitingForTake = true; return; }
+            if (!audio) {
+                console.warn('missing audio for', item.letter);
+                // if missing audio for an off-table item, just advance after short delay
+                if (item.cardPos === null) {
+                    setTimeout(() => { this.pointer++; if (this.pointer < this.queue.length) this._playCurrent(); else this.playing = false; }, 300);
+                    return;
+                }
+                this.waitingForTake = true;
+                return;
+            }
             try { audio.currentTime = 0; audio.play().catch(e => console.warn('audio play fail', e)); } catch (e) { console.warn('audio play exception', e); }
             this.playing = true;
-            this.waitingForTake = true; // block advancing until card is taken
+            // If the current item refers to an on-table card (cardPos != null), block advancing until it's taken.
+            // If it's an off-table item (cardPos === null), advance automatically when playback ends.
+            if (item.cardPos === null) {
+                this.waitingForTake = false;
+                // remove any previous handler
+                audio.onended = null;
+                audio.onended = () => {
+                    // clear handler to avoid double calls
+                    try { audio.onended = null; } catch (e) { }
+                    setTimeout(() => {
+                        this.pointer++;
+                        if (this.pointer < this.queue.length) this._playCurrent(); else this.playing = false;
+                    }, 300);
+                };
+            } else {
+                this.waitingForTake = true;
+            }
         }
 
         onCardTaken(cardPos) {
@@ -96,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const it = this.queue[this.pointer];
                     const a = this.audios[it.letter];
-                    if (a) { a.pause(); try { a.currentTime = 0; } catch (e) { } }
+                    if (a) { try { a.onended = null; } catch (e) { } a.pause(); try { a.currentTime = 0; } catch (e) { } }
                 } catch (e) { }
                 // after 3s advance to next
                 setTimeout(() => {
@@ -115,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (this.playing && this.queue[this.pointer]) {
                 const it = this.queue[this.pointer];
                 const a = this.audios[it.letter];
-                if (a) { try { a.pause(); a.currentTime = 0; } catch (e) { } }
+                if (a) { try { a.onended = null; a.pause(); a.currentTime = 0; } catch (e) { } }
             }
             this.queue = [];
             this.pointer = 0;
