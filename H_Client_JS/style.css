@@ -1,11 +1,36 @@
 * {
   box-sizing: border-box;
 }
+
+/* Make the app fill the viewport and use column flex layout so header + main
+   can size correctly. This lets `main` grow to fill remaining height. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-  margin: 0;
   background: #0b0b10;
   color: #ddd;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* root app container (in index.html) */
+#app {
+  display: flex;
+  flex-direction: column;
+  /* constrain root app to the visible viewport height.
+     We use a CSS variable `--vh` (set from JS) to work around mobile
+     browser UI (Chrome address bar) where 100vh can be inconsistent.
+     Fallback to 100vh if --vh is not provided. */
+  height: calc(var(--vh, 1vh) * 100);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 header {
   padding: 8px 12px;
@@ -14,6 +39,7 @@ header {
   gap: 12px;
   background: #111;
   border-bottom: 1px solid #222;
+  flex: 0 0 auto;
 }
 header h1 {
   margin: 0;
@@ -37,12 +63,19 @@ main {
   display: flex;
   gap: 12px;
   padding: 12px;
+  /* allow main to grow and fill the remaining viewport height */
+  flex: 1 1 auto;
+  min-height: 0; /* important for children with overflow */
 }
 #gameCanvas {
   background: #001;
   border: 1px solid #333;
-  flex: 1;
+  flex: 1 1 auto;
   max-width: 100%;
+  /* make canvas fill available height of its container */
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 #chatPanel {
   width: 320px;
@@ -52,9 +85,13 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* occupy full height of game area */
+  height: 100%;
 }
 #messages {
-  height: 100vh;
+  /* allow messages area to grow inside the chat panel instead of using viewport height */
+  flex: 1 1 auto;
+  min-height: 0; /* enable correct scrolling inside flex */
   overflow-y: auto;
   white-space: normal;
   overflow-wrap: break-word;
@@ -91,6 +128,8 @@ main {
   display: none;
   width: 100%;
   gap: 12px;
+  /* when shown (main.js sets display: 'flex') it should stretch to fill main */
+  align-items: stretch;
 }
 .roomTile {
   background: linear-gradient(180deg, #0c1220, #06101a);
