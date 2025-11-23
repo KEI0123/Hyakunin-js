@@ -298,13 +298,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         room["owners"][cid] = player_name
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": {"id": cid, "player": player_name}})
-                        # After taking, check if all cards are taken -> finish game
-                        all_taken = all(bool(o) for o in room.get("owners", []))
-                        if all_taken:
+                        # After taking, check if enough cards are taken -> finish game
+                        taken_count = sum(1 for o in room.get("owners", []) if o)
+                        # finish when 9 or more cards have been taken (ユーザ要求)
+                        if taken_count >= 9:
                             # count cards per player name
                             counts = {}
                             for o in room.get("owners", []):
-                                counts[o] = counts.get(o, 0) + 1
+                                if o:
+                                    counts[o] = counts.get(o, 0) + 1
                             # determine winner(s)
                             max_count = 0
                             winners = []
