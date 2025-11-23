@@ -5,7 +5,7 @@ class Renderer {
         this.ctx = canvas.getContext('2d');
         this.baseImg = new Image();
         this.sheetImg = new Image();
-        // use explicit relative paths and add handlers to detect load errors
+        // asset load flags
         this.baseImgLoaded = false;
         this.sheetImgLoaded = false;
         this.baseImg.onload = () => { this.baseImgLoaded = true; this.draw(); };
@@ -14,10 +14,12 @@ class Renderer {
         this.sheetImg.onerror = (e) => { console.error('Failed to load sheet image:', this.sheetImg.src, e); this.sheetImgLoaded = false; };
         this.baseImg.src = './dat/image/card.png';
         this.sheetImg.src = './dat/image/m_sheet.png';
+
         this.cardLetters = new Array(10).fill(0);
         this.owners = new Array(10).fill('');
         // don't reveal cards until the game starts; `setState` will reveal
         this.revealed = false;
+
         window.addEventListener('resize', () => this.resize());
         this.resize();
     }
@@ -49,6 +51,7 @@ class Renderer {
         if (!this.revealed) {
             return;
         }
+
         const cardW = Math.floor(cw / 6);
         const cardH = Math.floor(cardW * aspect);
         const gap = Math.floor(cardW / 6);
@@ -56,17 +59,21 @@ class Renderer {
         const oppY = ch - cardH - gap;
         const startX = gap;
 
-        // draw top row
+        // top row: skip taken cards
         for (let i = 0; i < 5; i++) {
             const x = startX + i * (cardW + gap);
-            this._drawCard(x, topY, cardW, cardH, this.cardLetters[i], 180);
-            this._drawOwnerRect(x, topY, cardW, cardH, this.owners[i]);
+            if (!this.owners[i]) {
+                this._drawCard(x, topY, cardW, cardH, this.cardLetters[i], 180);
+            }
         }
-        // bottom row
+
+        // bottom row: skip taken cards
         for (let i = 0; i < 5; i++) {
             const x = startX + i * (cardW + gap);
-            this._drawCard(x, oppY, cardW, cardH, this.cardLetters[5 + i], 0);
-            this._drawOwnerRect(x, oppY, cardW, cardH, this.owners[5 + i]);
+            const idx = 5 + i;
+            if (!this.owners[idx]) {
+                this._drawCard(x, oppY, cardW, cardH, this.cardLetters[idx], 0);
+            }
         }
     }
 
@@ -103,13 +110,7 @@ class Renderer {
         ctx.restore();
     }
 
-    _drawOwnerRect(x, y, w, h, owner) {
-        const ctx = this.ctx;
-        ctx.lineWidth = 2;
-        if (!owner || owner === '') ctx.strokeStyle = '#fff';
-        else ctx.strokeStyle = '#c44';
-        ctx.strokeRect(x, y, w, h);
-    }
+    // owner rect drawing removed — owner frames are not used when hiding taken cards
 
     cardAtPosition(mx, my) {
         const cw = this.canvas.width;
@@ -122,11 +123,11 @@ class Renderer {
         // top
         if (my >= topY && my <= topY + cardH) {
             const idx = Math.floor((mx - startX) / (cardW + gap));
-            if (idx >= 0 && idx < 5) return idx;
+            if (idx >= 0 && idx < 5) return this.owners[idx] ? -1 : idx;
         }
         if (my >= oppY && my <= oppY + cardH) {
             const idx = Math.floor((mx - startX) / (cardW + gap));
-            if (idx >= 0 && idx < 5) return 5 + idx;
+            if (idx >= 0 && idx < 5) return this.owners[5 + idx] ? -1 : 5 + idx;
         }
         return -1;
     }
