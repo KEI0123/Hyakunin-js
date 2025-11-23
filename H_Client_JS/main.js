@@ -85,6 +85,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!this.playing) return;
             if (this.currentCardPos === cardPos && this.waitingForTake) {
                 this.waitingForTake = false;
+                // stop current audio immediately
+                try {
+                    const it = this.queue[this.pointer];
+                    const a = this.audios[it.letter];
+                    if (a) { a.pause(); try { a.currentTime = 0; } catch (e) { } }
+                } catch (e) { }
+                // after 3s advance to next
                 setTimeout(() => {
                     this.pointer++;
                     if (this.pointer < this.queue.length) this._playCurrent();
