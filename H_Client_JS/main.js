@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let myPlayerId = '';
     let mySpectatorId = '';
     let myRole = '';
+    let pendingLeaveResolver = null;
     let roomId = '';
     let selectedTile = null; // index of lobby tile user clicked (0..9)
     // Fixed room IDs room01..room10
@@ -127,7 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (myPlayerId) leaveMsg.player_id = myPlayerId;
             if (mySpectatorId) leaveMsg.spectator_id = mySpectatorId;
             try {
+                // Prepare a promise that resolves when server confirms leave
+                const leavePromise = new Promise((resolve) => {
+                    pendingLeaveResolver = resolve;
+                });
                 ws.sendObj(leaveMsg);
+                // wait for server broadcast or timeout (1.5s)
+                const timeout = new Promise((resolve) => setTimeout(resolve, 1500));
+                await Promise.race([leavePromise, timeout]);
             } catch (e) {
                 console.warn('leave send failed', e);
             }
@@ -135,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ws.close();
             } catch (e) { }
             ws = null;
+            pendingLeaveResolver = null;
         }
         // reset client-side room/player state
         myPlayerId = '';
@@ -227,6 +236,24 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
             chat.pushMessage('', name + ' joined');
+        } else if (t === 'player_left' || t === 'spectator_left') {
+            // If this is our own leave confirmation, resolve pending promise
+            const payload = msg.payload || {};
+            if (pendingLeaveResolver) {
+                if (t === 'player_left' && payload.player_id && payload.player_id === myPlayerId) {
+                    try { pendingLeaveResolver(); } catch (e) { }
+                    pendingLeaveResolver = null;
+                } else if (t === 'spectator_left' && payload.spectator_id && payload.spectator_id === mySpectatorId) {
+                    try { pendingLeaveResolver(); } catch (e) { }
+                    pendingLeaveResolver = null;
+                }
+            }
+            // show message to chat as well
+            if (t === 'player_left') {
+                chat.pushMessage('', (payload.player_id || '') + ' left');
+            } else {
+                chat.pushMessage('', (payload.spectator_id || '') + ' left');
+            }
         } else if (t === 'promoted') {
             const you = msg.you || {};
             if (you.player_id) myPlayerId = you.player_id;
