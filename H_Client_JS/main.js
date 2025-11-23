@@ -343,6 +343,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
             chat.pushMessage('', name + ' joined');
+        } else if (t === 'player_penalty') {
+            const payload = msg.payload || {};
+            const pname = payload.player || '(unknown)';
+            const pen = payload.penalties || 0;
+            chat.pushMessage('system', `${pname} お手つき -1 (total: ${pen})`);
         } else if (t === 'player_left' || t === 'spectator_left') {
             // If this is our own leave confirmation, resolve pending promise
             const payload = msg.payload || {};
@@ -470,6 +475,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (typeof window._wrongClickPenalty === 'undefined') window._wrongClickPenalty = 0;
                     window._wrongClickPenalty = (window._wrongClickPenalty || 0) + 1;
                     chat.pushMessage('system', `wrong click: -1 (penalty total: ${window._wrongClickPenalty})`);
+                    // notify server about mistake so it can broadcast and apply penalty to scoring
+                    try {
+                        if (ws && myPlayerId) {
+                            const out = { type: 'action', player_id: myPlayerId, action: 'mistake', payload: {} };
+                            ws.sendObj(out);
+                        }
+                    } catch (e) { }
                     // play an optional error sound (if available)
                     try {
                         if (window._errAudio === undefined) window._errAudio = new Audio('./dat/wav/error.wav');

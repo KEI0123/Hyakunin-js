@@ -103,6 +103,8 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
         "owners": ["" for _ in range(10)],
         # card_letters: 各カードに対応する数値 ID
         "card_letters": card_letters,
+        # penalties: player_name -> penalty count (mistakes)
+        "penalties": {},
         # whether a game in this room has been started
         "started": False,
         "events": [],
@@ -130,6 +132,7 @@ def create_room_with_id(room_id: str, max_players: int = 2) -> Dict[str, Any]:
         "spectators": [],
         "owners": ["" for _ in range(10)],
         "card_letters": card_letters,
+        "penalties": {},
         "started": False,
         "events": [],
         "next_event_id": 1,
@@ -307,6 +310,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             for o in room.get("owners", []):
                                 if o:
                                     counts[o] = counts.get(o, 0) + 1
+                            # apply penalties (subtract mistakes) recorded in room['penalties']
+                            penalties = room.get("penalties", {}) or {}
+                            for pname, pen in penalties.items():
+                                if pname in counts:
+                                    counts[pname] = max(0, counts.get(pname, 0) - int(pen))
                             # determine winner(s)
                             max_count = 0
                             winners = []
@@ -336,6 +344,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             room["started"] = False
                             payload_fin = {"winner": winner_name, "winner_label": winner_label, "counts": counts}
                             fin_evt = add_event(room, "game_finished", payload_fin)
+                    elif action == "mistake":
+                        # Player clicked wrong card (penalty)
+                        player_name = found.get("name")
+                        # increment penalty counter for this player name
+                        cur = room.get("penalties", {}) or {}
+                        cur[player_name] = cur.get(player_name, 0) + 1
+                        room["penalties"] = cur
+                        evt = add_event(room, "player_penalty", {"player_id": player_id, "player": player_name, "penalties": cur[player_name]})
                     elif action == "start":
                         # Start a new game in the room: reset owners and deal new card letters
                         # Only allow if sender is a valid player (checked above)
@@ -343,6 +359,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         # reset ownership and deal new card letters
                         room["owners"] = ["" for _ in range(10)]
                         room["card_letters"] = random.sample(list(range(100)), 10)
+                        # reset penalties at start of new game
+                        room["penalties"] = {}
                         room["started"] = True
                         evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name})
                         # prepare snapshot to broadcast
