@@ -298,6 +298,42 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         room["owners"][cid] = player_name
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": {"id": cid, "player": player_name}})
+                        # After taking, check if all cards are taken -> finish game
+                        all_taken = all(bool(o) for o in room.get("owners", []))
+                        if all_taken:
+                            # count cards per player name
+                            counts = {}
+                            for o in room.get("owners", []):
+                                counts[o] = counts.get(o, 0) + 1
+                            # determine winner(s)
+                            max_count = 0
+                            winners = []
+                            for name, cnt in counts.items():
+                                if cnt > max_count:
+                                    max_count = cnt
+                                    winners = [name]
+                                elif cnt == max_count:
+                                    winners.append(name)
+                            # choose label A/B by player slot if possible
+                            winner_label = None
+                            winner_name = None
+                            if len(winners) == 1:
+                                winner_name = winners[0]
+                                # find player with that name to get slot
+                                for p in room.get("players", []):
+                                    if p.get("name") == winner_name:
+                                        slot = p.get("slot")
+                                        if slot is not None:
+                                            # map 0 -> A, 1 -> B, others -> ?
+                                            winner_label = chr(ord('A') + int(slot)) if isinstance(slot, int) and slot >= 0 else None
+                                        break
+                            else:
+                                # tie
+                                winner_name = None
+                            # mark game as not started (finished)
+                            room["started"] = False
+                            payload_fin = {"winner": winner_name, "winner_label": winner_label, "counts": counts}
+                            fin_evt = add_event(room, "game_finished", payload_fin)
                     elif action == "start":
                         # Start a new game in the room: reset owners and deal new card letters
                         # Only allow if sender is a valid player (checked above)
@@ -324,6 +360,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": payload})
                 # broadcast event
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
+                # if finish event was created, broadcast it
+                try:
+                    if 'fin_evt' in locals():
+                        await broadcast(room, {"type": fin_evt["type"], "id": fin_evt["id"], "payload": fin_evt["payload"]})
+                except Exception:
+                    pass
                 # if start, broadcast snapshot as well
                 if action == "start":
                     await broadcast(room, snapshot)

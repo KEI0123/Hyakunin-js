@@ -294,6 +294,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderer.setState(pendingSnapshot.owners || [], pendingSnapshot.card_letters || []);
             }
             if (btnStart) btnStart.style.display = 'none';
+        } else if (t === 'game_finished') {
+            const payload = msg.payload || {};
+            // show winner label if available, else show draw or winner name
+            if (payload.winner_label) {
+                chat.pushMessage('system', 'winner ' + payload.winner_label);
+            } else if (payload.winner) {
+                chat.pushMessage('system', 'winner ' + payload.winner);
+            } else {
+                chat.pushMessage('system', 'draw');
+            }
+            // mark not started
+            started = false;
+            // optional: reveal final counts in chat
+            if (payload.counts) {
+                for (const [name, cnt] of Object.entries(payload.counts)) {
+                    chat.pushMessage('system', `${name}: ${cnt}`);
+                }
+            }
         } else if (t === 'demoted') {
             const you = msg.you || {};
             if (you.spectator_id) mySpectatorId = you.spectator_id;
