@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderer = new Renderer(canvas);
     const chat = new ChatUI();
     const statusEl = document.getElementById('status');
-    const btnConnect = document.getElementById('btnConnect');
     const btnCreate = document.getElementById('btnCreate');
     const inpName = document.getElementById('inpName');
     const inpRoom = document.getElementById('inpRoom');
@@ -67,27 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // initial lobby render
     renderLobby();
 
-    // Connect button: only establish WebSocket connection (do not send join)
-    btnConnect.addEventListener('click', async () => {
-        let url = document.getElementById('inpWsUrl').value.trim();
-        if (!url) url = 'wss://hyakunin-js.onrender.com/ws';
-        if (ws) { console.log('Already connected'); setStatus('接続済み'); return; }
-        console.log('Connecting to WS URL (connect only):', url);
-        ws = new WSClient();
-        ws.onmessage = handleMessage;
-        ws.onopen = (ev) => { console.log('ws open', ev); setStatus('接続済み'); };
-        ws.onclose = (ev) => { console.log('ws close', ev); setStatus('切断'); ws = null; };
-        ws.onerror = (ev) => { console.error('ws error', ev); };
-        try {
-            await ws.connect(url);
-        } catch (e) {
-            console.error('WebSocket connect failed:', e);
-            setStatus('切断');
-            alert('WebSocket に接続できません: ' + (e && e.message ? e.message : e));
-            ws = null;
-            return;
-        }
-    });
+    // Connect button removed; connection is established when creating/joining a room
 
     // Create button: ensure connection then send join (this preserves previous "join" behavior)
     btnCreate.addEventListener('click', async () => {
