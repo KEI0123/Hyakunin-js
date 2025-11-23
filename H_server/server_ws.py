@@ -23,10 +23,17 @@ import asyncio
 import secrets
 import string
 import datetime
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, Optional
 import random
+import logging
 
 app = FastAPI()
+
+# simple logger for the module
+logger = logging.getLogger("server_ws")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
 
 # rooms: room_id -> dict
 # each room: { "room_id": str, "players": [ {player_id,name,slot,...} ],
@@ -55,6 +62,20 @@ def gen_id(n: int = 6) -> str:
     """
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(n))
+
+
+def find_player(room: Dict[str, Any], player_id: str) -> Optional[Dict[str, Any]]:
+    for p in room.get("players", []):
+        if p.get("player_id") == player_id:
+            return p
+    return None
+
+
+def find_spectator(room: Dict[str, Any], spectator_id: str) -> Optional[Dict[str, Any]]:
+    for s in room.get("spectators", []):
+        if s.get("spectator_id") == spectator_id:
+            return s
+    return None
 
 def make_room(max_players: int = 2) -> Dict[str, Any]:
     """
@@ -157,9 +178,14 @@ async def broadcast(room: Dict[str, Any], message: Dict[str, Any]):
     for ws in conns:
         try:
             await ws.send_json(message)
-        except Exception:
+        except Exception as e:
             # 送信失敗（接続切断等）とみなし、後で集合から削除する
+            logger.debug("broadcast: failed to send to websocket: %s", e)
             to_remove.append(ws)
+            try:
+                await ws.close()
+            except Exception:
+                pass
     if to_remove:
         async with room["lock"]:
             for ws in to_remove:
@@ -170,6 +196,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     room = None
     client_meta = {}
+    pass_evt = None
     try:
         # 最初にクライアントからの join メッセージを待つ
         # 仕様: {"type": "join", "room_id": null|str, "role": "player"|"spectator", "name": "..."}
@@ -180,12 +207,9 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
         room_id = msg.get("room_id")
-        role = msg.get("role")
-        name = msg.get("name")
-        if not role or not name:
-            await websocket.send_json({"type": "error", "error": "invalid join parameters"})
-            await websocket.close()
-            return
+        # default to spectator if role not provided; default name to anonymous
+        role = msg.get("role") or "spectator"
+        name = msg.get("name") or "(anonymous)"
 
         # ルームが存在しなければ作成、存在すれば取得
         if not room_id:
@@ -208,7 +232,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.close()
                     return
                 player_id = secrets.token_urlsafe(8)
-                used_slots = {p.get("slot") for p in room["players"]}
+                used_slots = {p.get("slot") for p in room.get("players", []) if p.get("slot") is not None}
                 slot = 0
                 while slot in used_slots:
                     slot += 1
@@ -253,12 +277,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 player_id = data.get("player_id")
                 action = data.get("action")
                 payload = data.get("payload", {})
-                found = None
                 async with room["lock"]:
-                    for p in room["players"]:
-                        if p["player_id"] == player_id:
-                            found = p
-                            break
+                    found = find_player(room, player_id)
                     if not found:
                         await websocket.send_json({"type": "error", "error": "player not in room or invalid id"})
                         continue
@@ -277,6 +297,79 @@ async def websocket_endpoint(websocket: WebSocket):
                     else:
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": payload})
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
+            elif t == "become_player":
+                # spectator -> player 昇格リクエスト
+                # クライアント側は通常ボタン押下でこのメッセージを送る
+                async with room["lock"]:
+                    # identify spectator by client_meta first, fallback to provided id
+                    sid = client_meta.get("spectator_id") or data.get("spectator_id")
+                    if not sid:
+                        await websocket.send_json({"type": "error", "error": "not a spectator or missing id"})
+                        continue
+                    # ensure spectator exists
+                    spec = None
+                    for s in room.get("spectators", []):
+                        if s.get("spectator_id") == sid:
+                            spec = s
+                            break
+                    if not spec:
+                        await websocket.send_json({"type": "error", "error": "spectator not found"})
+                        continue
+                    # check room capacity
+                    if len(room.get("players", [])) >= room["meta"].get("max_players", 2):
+                        await websocket.send_json({"type": "error", "error": "room full"})
+                        continue
+                    # create player entry
+                    player_id = secrets.token_urlsafe(8)
+                    used_slots = {p.get("slot") for p in room.get("players", []) if p.get("slot") is not None}
+                    slot = 0
+                    while slot in used_slots:
+                        slot += 1
+                    pname = spec.get("name") or data.get("name") or "(anonymous)"
+                    p = {"player_id": player_id, "name": pname, "joined_at": utcnow_iso(), "slot": slot}
+                    room["players"].append(p)
+                    # remove spectator
+                    room["spectators"] = [x for x in room.get("spectators", []) if x.get("spectator_id") != sid]
+                    # update client_meta
+                    client_meta = {"role": "player", "player_id": player_id, "name": pname}
+                    evt = add_event(room, "player_joined", {"player_id": player_id, "name": pname, "slot": slot})
+                # notify the requester and broadcast
+                await websocket.send_json({"type": "promoted", "you": client_meta})
+                # optional: send updated snapshot to the promoted client
+                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", [])}, "next_event_id": room["next_event_id"]})
+                await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
+            elif t == "become_spectator":
+                # player -> spectator 昇格（退席して観覧者になる）
+                async with room["lock"]:
+                    pid = client_meta.get("player_id") or data.get("player_id")
+                    if not pid:
+                        await websocket.send_json({"type": "error", "error": "not a player or missing id"})
+                        continue
+                    # find player
+                    found = None
+                    for p in room.get("players", []):
+                        if p.get("player_id") == pid:
+                            found = p
+                            break
+                    if not found:
+                        await websocket.send_json({"type": "error", "error": "player not found"})
+                        continue
+                    pname = found.get("name")
+                    # create spectator entry
+                    spectator_id = secrets.token_urlsafe(8)
+                    s = {"spectator_id": spectator_id, "name": pname, "joined_at": utcnow_iso()}
+                    room["spectators"].append(s)
+                    # remove player from players list
+                    room["players"] = [p for p in room.get("players", []) if p.get("player_id") != pid]
+                    # update client_meta
+                    client_meta = {"role": "spectator", "spectator_id": spectator_id, "name": pname}
+                    evt_left = add_event(room, "player_left", {"player_id": pid})
+                    evt_spec = add_event(room, "spectator_joined", {"spectator_id": spectator_id, "name": pname})
+                # notify requester and broadcast
+                await websocket.send_json({"type": "demoted", "you": client_meta})
+                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", [])}, "next_event_id": room["next_event_id"]})
+                await broadcast(room, {"type": evt_left["type"], "id": evt_left["id"], "payload": evt_left["payload"]})
+                await broadcast(room, {"type": evt_spec["type"], "id": evt_spec["id"], "payload": evt_spec["payload"]})
             elif t == "chat":
                 # チャットメッセージ処理: payload に {"message": "..."} を期待
                 payload = data.get("payload", {})
@@ -286,22 +379,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 sender_name = None
                 async with room["lock"]:
-                    # player と spectator の登録情報から送信者名を解決
                     pid = data.get("player_id")
                     if pid:
-                        for p in room["players"]:
-                            if p.get("player_id") == pid:
-                                sender_name = p.get("name")
-                                break
+                        p = find_player(room, pid)
+                        if p:
+                            sender_name = p.get("name")
                     if sender_name is None:
                         sid = data.get("spectator_id")
                         if sid:
-                            for s in room["spectators"]:
-                                if s.get("spectator_id") == sid:
-                                    sender_name = s.get("name")
-                                    break
+                            s = find_spectator(room, sid)
+                            if s:
+                                sender_name = s.get("name")
                     if sender_name is None:
-                        # フォールバック: 受信データの name か匿名
                         sender_name = data.get("name") or "(anonymous)"
                     evt = add_event(room, "chat_message", {"from": sender_name, "message": msg_text})
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
@@ -311,16 +400,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 token = data.get("id") or data.get("player_id") or data.get("spectator_id")
                 async with room["lock"]:
                     if role == "player":
-                        before = len(room["players"])
-                        room["players"] = [p for p in room["players"] if p["player_id"] != token]
-                        after = len(room["players"])
+                        before = len(room.get("players", []))
+                        room["players"] = [p for p in room.get("players", []) if p.get("player_id") != token]
+                        after = len(room.get("players", []))
                         if before != after:
                             evt = add_event(room, "player_left", {"player_id": token})
                             await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
                     elif role == "spectator":
-                        before = len(room["spectators"])
-                        room["spectators"] = [s for s in room["spectators"] if s["spectator_id"] != token]
-                        after = len(room["spectators"])
+                        before = len(room.get("spectators", []))
+                        room["spectators"] = [s for s in room.get("spectators", []) if s.get("spectator_id") != token]
+                        after = len(room.get("spectators", []))
                         if before != after:
                             evt = add_event(room, "spectator_left", {"spectator_id": token})
                             await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
@@ -345,11 +434,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     if pid:
                         # remove player and clear any ownerships held by this player name
                         pname = None
-                        for p in room["players"]:
+                        for p in room.get("players", []):
                             if p.get("player_id") == pid:
                                 pname = p.get("name")
                                 break
-                        room["players"] = [p for p in room["players"] if p.get("player_id") != pid]
+                        room["players"] = [p for p in room.get("players", []) if p.get("player_id") != pid]
                         if pname:
                             for i, o in enumerate(room.get("owners", [])):
                                 if o == pname:
@@ -359,12 +448,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif client_meta.get("role") == "spectator":
                     sid = client_meta.get("spectator_id")
                     if sid:
-                        room["spectators"] = [s for s in room["spectators"] if s.get("spectator_id") != sid]
+                        room["spectators"] = [s for s in room.get("spectators", []) if s.get("spectator_id") != sid]
                         evt = add_event(room, "spectator_left", {"spectator_id": sid})
                         pass_evt = evt
             # broadcast any left event (do outside the lock to avoid reentrancy)
             try:
-                if 'pass_evt' in locals():
+                if pass_evt:
                     await broadcast(room, {"type": pass_evt["type"], "id": pass_evt["id"], "payload": pass_evt["payload"]})
             except Exception:
                 pass

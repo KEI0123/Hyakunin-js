@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const inpRoom = document.getElementById('inpRoom');
     const selRole = document.getElementById('selRole');
     const btnBack = document.getElementById('btnBack');
+    const btnBecome = document.getElementById('btnBecome');
+    const btnWithdraw = document.getElementById('btnWithdraw');
 
     let ws = null;
     let myPlayerId = '';
@@ -131,13 +133,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             try {
                 ws.close();
-            } catch (e) {}
+            } catch (e) { }
             ws = null;
         }
         // reset client-side room/player state
         myPlayerId = '';
         mySpectatorId = '';
         myRole = '';
+        if (btnBecome) btnBecome.disabled = true;
+        if (btnWithdraw) btnWithdraw.disabled = true;
         roomId = '';
         setStatus('ロビー');
         if (chat && typeof chat.clearMessages === 'function') chat.clearMessages();
@@ -145,6 +149,36 @@ document.addEventListener('DOMContentLoaded', () => {
         renderer.setState(new Array(10).fill(''), new Array(10).fill(0));
         showLobbyView();
     });
+
+    // Become (spectator -> player) button
+    if (btnBecome) {
+        btnBecome.addEventListener('click', () => {
+            if (!ws) { alert('未接続です'); return; }
+            if (myRole === 'player') { alert('既にプレイヤーです'); return; }
+            // send become_player; include spectator_id when available
+            const out = { type: 'become_player' };
+            if (mySpectatorId) out.spectator_id = mySpectatorId;
+            // name optional
+            const nameVal = document.getElementById('inpName').value.trim();
+            if (nameVal) out.name = nameVal;
+            ws.sendObj(out);
+            setStatus('promoting...');
+        });
+        btnBecome.disabled = true;
+    }
+
+    // Withdraw (player -> spectator) button
+    if (btnWithdraw) {
+        btnWithdraw.addEventListener('click', () => {
+            if (!ws) { alert('未接続です'); return; }
+            if (myRole !== 'player') { alert('プレイヤーではありません'); return; }
+            const out = { type: 'become_spectator' };
+            if (myPlayerId) out.player_id = myPlayerId;
+            ws.sendObj(out);
+            setStatus('demoting...');
+        });
+        btnWithdraw.disabled = true;
+    }
 
     function handleMessage(msg) {
         const t = msg.type;
@@ -164,6 +198,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // switch to game view once joined
             showGameView();
+            if (btnBecome) btnBecome.disabled = (myRole === 'player');
+            if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
         } else if (t === 'snapshot') {
             const room = msg.room || {};
             renderer.setState(room.owners || [], room.card_letters || []);
@@ -191,9 +227,27 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (t === 'player_joined') {
             const name = msg.payload && msg.payload.name;
             chat.pushMessage('', name + ' joined');
+        } else if (t === 'promoted') {
+            const you = msg.you || {};
+            if (you.player_id) myPlayerId = you.player_id;
+            if (you.spectator_id) mySpectatorId = you.spectator_id;
+            myRole = you.player_id ? 'player' : (you.spectator_id ? 'spectator' : myRole);
+            setStatus('joined ' + roomId + ' as ' + myRole);
+            chat.pushMessage('', 'promoted to player');
+            if (btnBecome) btnBecome.disabled = (myRole === 'player');
+            if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
         } else if (t === 'chat_message') {
             const payload = msg.payload || {};
             chat.pushMessage(payload.from || '', payload.message || '');
+        } else if (t === 'demoted') {
+            const you = msg.you || {};
+            if (you.spectator_id) mySpectatorId = you.spectator_id;
+            if (you.player_id) myPlayerId = you.player_id;
+            myRole = you.spectator_id ? 'spectator' : myRole;
+            setStatus('joined ' + roomId + ' as ' + myRole);
+            chat.pushMessage('', 'you are now spectator');
+            if (btnBecome) btnBecome.disabled = (myRole === 'player');
+            if (btnWithdraw) btnWithdraw.disabled = (myRole !== 'player');
         } else if (t === 'error') {
             chat.pushMessage('server', 'error: ' + (msg.error || 'unknown'));
         } else {
@@ -225,7 +279,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cid >= 0) {
             // if owned, ignore
             if (renderer.owners[cid]) return;
-            const playerId = myPlayerId || mySpectatorId || '';
+            // only players can take
+            if (myRole !== 'player') { alert('参加（プレイヤー）として参加してください'); return; }
             const out = { type: 'action', player_id: myPlayerId, action: 'take', payload: { id: cid, player: document.getElementById('inpName').value } };
             if (ws) ws.sendObj(out);
         }

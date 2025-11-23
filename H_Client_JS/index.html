@@ -19,7 +19,7 @@
           <input id="inpRoom" placeholder="部屋ID（空で作成）" />
           <select id="selRole">
             <option value="player">Player</option>
-            <option value="spectator">Spectator</option>
+            <option value="spectator" selected>Spectator</option>
           </select>
           <input id="inpWsUrl" placeholder="WebSocket URL (例: ws://localhost:5001/ws)" value="wss://hyakunin-js.onrender.com/ws" style="width: 260px" />
           <button id="btnConnect">Connect</button>
@@ -38,8 +38,10 @@
         <div id="gameView">
           <canvas id="gameCanvas" width="900" height="600"></canvas>
           <aside id="chatPanel">
-            <div style="display:flex; gap:8px; align-items:center;">
+            <div style="display: flex; gap: 8px; align-items: center">
               <button id="btnBack">戻る</button>
+              <button id="btnBecome">参加</button>
+              <button id="btnWithdraw">退出</button>
               <div id="roomInfo"></div>
             </div>
             <div id="playersList"></div>
