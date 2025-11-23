@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let roomId = '';
     let started = false; // whether the game has started (controls card visibility)
     let pendingSnapshot = null; // store snapshot until start
+    let currentPlayers = [];
+    let currentSpectators = [];
     let selectedTile = null; // index of lobby tile user clicked (0..9)
     // Fixed room IDs room01..room10
     const tileRoomIds = Array.from({ length: 10 }, (_, i) => {
@@ -371,10 +373,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     else audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []);
                 } catch (e) { console.warn('audio start fail', e); }
             }
-            // players -> array of {player_id, name}
-            const players = (room.players || []).map(p => [p.player_id, p.name]);
-            const spectators = (room.spectators || []).map(s => [s.spectator_id, s.name]);
-            chat.setRoomInfo(room.room_id, players, spectators, '');
+            // players -> array of [player_id, name]
+            currentPlayers = (room.players || []).map(p => [p.player_id, p.name]);
+            currentSpectators = (room.spectators || []).map(s => [s.spectator_id, s.name]);
+            chat.setRoomInfo(room.room_id, currentPlayers, currentSpectators, '');
         } else if (t === 'player_action') {
             const payload = msg.payload || {};
             if (payload && payload.payload && typeof payload.payload === 'object' && payload.payload.id !== undefined) {
@@ -409,8 +411,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) { console.warn('audio start fail', e); }
             }
         } else if (t === 'player_joined') {
-            const name = msg.payload && msg.payload.name;
+            const payload = msg.payload || {};
+            const pid = payload.player_id;
+            const name = payload.name || '(unknown)';
             chat.pushMessage('', name + ' joined');
+            if (pid) {
+                // add to local player list only if not already present
+                const exists = currentPlayers.some(p => p[0] === pid);
+                if (!exists) {
+                    currentPlayers.push([pid, name]);
+                    try { chat.setRoomInfo(roomId, currentPlayers, currentSpectators, ''); } catch (e) { }
+                }
+            }
+        } else if (t === 'spectator_joined') {
+            const payload = msg.payload || {};
+            const sid = payload.spectator_id;
+            const name = payload.name || '(unknown)';
+            chat.pushMessage('', name + ' joined (spectator)');
+            if (sid) {
+                const exists = currentSpectators.some(s => s[0] === sid);
+                if (!exists) {
+                    currentSpectators.push([sid, name]);
+                    try { chat.setRoomInfo(roomId, currentPlayers, currentSpectators, ''); } catch (e) { }
+                }
+            }
         } else if (t === 'player_penalty') {
             const payload = msg.payload || {};
             const pname = payload.player || '(unknown)';
@@ -428,11 +452,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     pendingLeaveResolver = null;
                 }
             }
-            // show message to chat as well
+            // show message to chat as well and update local lists
             if (t === 'player_left') {
-                chat.pushMessage('', (payload.player_id || '') + ' left');
+                const pidLeft = payload.player_id;
+                chat.pushMessage('', (pidLeft || '') + ' left');
+                if (pidLeft) {
+                    currentPlayers = currentPlayers.filter(p => p[0] !== pidLeft);
+                    try { chat.setRoomInfo(roomId, currentPlayers, currentSpectators, ''); } catch (e) { }
+                }
             } else {
-                chat.pushMessage('', (payload.spectator_id || '') + ' left');
+                const sidLeft = payload.spectator_id;
+                chat.pushMessage('', (sidLeft || '') + ' left');
+                if (sidLeft) {
+                    currentSpectators = currentSpectators.filter(s => s[0] !== sidLeft);
+                    try { chat.setRoomInfo(roomId, currentPlayers, currentSpectators, ''); } catch (e) { }
+                }
             }
         } else if (t === 'promoted') {
             const you = msg.you || {};
