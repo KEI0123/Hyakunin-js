@@ -55,13 +55,20 @@ document.addEventListener('DOMContentLoaded', () => {
         startSequence(cardLetters, owners) {
             this.stop();
             this.queue = [];
-            // build queue in display order 0..9, include only visible (owners empty)
+            // build queue from visible cards (owners empty) but shuffle so order is random
+            const items = [];
             for (let i = 0; i < 10; i++) {
                 if (!owners || !owners[i]) {
                     const letter = (cardLetters && typeof cardLetters[i] !== 'undefined') ? (cardLetters[i] | 0) : 0;
-                    this.queue.push({ cardPos: i, letter: Math.max(0, Math.min(99, letter)) });
+                    items.push({ cardPos: i, letter: Math.max(0, Math.min(99, letter)) });
                 }
             }
+            // Fisher-Yates shuffle
+            for (let i = items.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = items[i]; items[i] = items[j]; items[j] = tmp;
+            }
+            this.queue = items;
             this.pointer = 0;
             this.playing = false;
             this.waitingForTake = false;
