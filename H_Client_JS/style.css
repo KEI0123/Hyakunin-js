@@ -173,3 +173,18 @@ main {
 #status {
   color: #9c9;
 }
+
+/* Lobby footer */
+.lobby-footer {
+  margin-top: 12px;
+  text-align: center;
+  color: #9ab;
+  font-size: 13px;
+}
+.lobby-footer p {
+  margin: 6px 0;
+}
+.lobby-footer a {
+  color: #7bd1ff;
+  text-decoration: underline;
+}
