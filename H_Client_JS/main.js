@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let myPlayerId = '';
     let mySpectatorId = '';
     let myRole = '';
+    // sync helpers
+    let serverOffsetMs = 0; // estimate: server_time - Date.now()
+    let appliedEventIds = new Set();
+    let lastSeenEventId = 0;
     let pendingLeaveResolver = null;
     let roomId = '';
     let started = false; // whether the game has started (controls card visibility)
@@ -341,6 +345,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // サーバーから受け取ったメッセージを処理する中央ハンドラ
     // type に応じて snapshot/player_action/chat/game_* 等を処理する
     function handleMessage(msg) {
+        // update server offset if provided by server (simple exponential smoothing)
+        try {
+            if (msg && msg.server_ts) {
+                const srv = Date.parse(msg.server_ts);
+                if (!isNaN(srv)) {
+                    const measured = srv - Date.now();
+                    serverOffsetMs = Math.round((serverOffsetMs * 0.8) + (measured * 0.2));
+                }
+            }
+        } catch (e) { }
+
+        // deduplicate events that include numeric id
+        try {
+            if (msg && typeof msg.id !== 'undefined' && msg.id !== null) {
+                const mid = parseInt(msg.id, 10);
+                if (!isNaN(mid)) {
+                    if (appliedEventIds.has(mid)) return; // already processed
+                    appliedEventIds.add(mid);
+                    if (mid > lastSeenEventId) lastSeenEventId = mid;
+                }
+            }
+        } catch (e) { }
+
         const t = msg.type;
         // DEBUG: uncomment to inspect incoming messages
         // console.log('WS IN:', msg);
@@ -380,6 +407,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Do not immediately display snapshot cards until the game is started.
             // Store snapshot and apply when started.
             pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null };
+            // conservatively track last seen event id from snapshot's next_event_id
+            try {
+                if (typeof msg.next_event_id !== 'undefined' && msg.next_event_id !== null) {
+                    const nid = parseInt(msg.next_event_id, 10);
+                    if (!isNaN(nid)) lastSeenEventId = Math.max(lastSeenEventId, nid - 1);
+                }
+            } catch (e) { }
+            // Try to fetch recent missing events (one before lastSeenEventId to be safe)
+            try { if (room.room_id) fetchMissingEvents(room.room_id, Math.max(0, lastSeenEventId - 1)); } catch (e) { }
             if (started) {
                 renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
                 try {
@@ -420,8 +456,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (btnStart) btnStart.style.display = 'none';
                 try {
                     const seq = (pendingSnapshot && pendingSnapshot.play_sequence) || (p.payload && p.payload.play_sequence) || null;
-                    if (seq) audioManager.startSequenceFromServer(seq);
-                    else audioManager.startSequence(renderer.cardLetters, renderer.owners);
+                    const playAt = (pendingSnapshot && pendingSnapshot.play_at) || (p.payload && p.payload.play_at) || null;
+                    scheduleSequenceStart(seq, playAt);
                 } catch (e) { console.warn('audio start fail', e); }
             }
         } else if (t === 'player_joined') {
@@ -514,8 +550,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btnStart) btnStart.style.display = 'none';
             try {
                 const seq = (payload && payload.play_sequence) || (pendingSnapshot && pendingSnapshot.play_sequence) || null;
-                if (seq) audioManager.startSequenceFromServer(seq);
-                else audioManager.startSequence(renderer.cardLetters, renderer.owners);
+                const playAt = payload && payload.play_at ? payload.play_at : (pendingSnapshot && pendingSnapshot.play_at ? pendingSnapshot.play_at : null);
+                scheduleSequenceStart(seq, playAt);
             } catch (e) { console.warn('audio start fail', e); }
         } else if (t === 'game_finished') {
             const payload = msg.payload || {};
@@ -574,6 +610,44 @@ document.addEventListener('DOMContentLoaded', () => {
         out.payload = { message: text };
         ws.sendObj(out);
     });
+
+    // Schedule sequence start using server-provided play_at (ISO) and serverOffsetMs
+    function scheduleSequenceStart(seq, playAt) {
+        try {
+            if (playAt) {
+                const srv = Date.parse(playAt);
+                if (!isNaN(srv)) {
+                    const localStart = srv - serverOffsetMs;
+                    const delay = localStart - Date.now();
+                    if (delay > 50) {
+                        setTimeout(() => { try { if (seq) audioManager.startSequenceFromServer(seq); else audioManager.startSequence(renderer.cardLetters, renderer.owners); } catch (e) { } }, delay);
+                        return;
+                    }
+                }
+            }
+        } catch (e) { }
+        if (seq) audioManager.startSequenceFromServer(seq); else audioManager.startSequence(renderer.cardLetters, renderer.owners);
+    }
+
+    // Fetch missing events from server HTTP API and feed them into handleMessage
+    async function fetchMissingEvents(roomId, sinceId) {
+        try {
+            let base = '';
+            try {
+                const wsUrl = (document.getElementById('inpWsUrl') && document.getElementById('inpWsUrl').value) ? document.getElementById('inpWsUrl').value.trim() : '';
+                if (wsUrl.startsWith('wss://')) base = 'https://' + wsUrl.substring(6).split('/')[0];
+                else if (wsUrl.startsWith('ws://')) base = 'http://' + wsUrl.substring(5).split('/')[0];
+            } catch (e) { }
+            const fetchUrl = (base ? base : '') + '/rooms/' + encodeURIComponent(roomId) + '/events?since_id=' + encodeURIComponent(sinceId || 0);
+            const resp = await fetch(fetchUrl);
+            if (!resp.ok) return;
+            const j = await resp.json();
+            if (!j || !Array.isArray(j.events)) return;
+            for (const ev of j.events) {
+                try { handleMessage(ev); } catch (e) { }
+            }
+        } catch (e) { console.warn('fetchMissingEvents failed', e); }
+    }
 
     // canvas click -> compute card id and send 'action' take
     canvas.addEventListener('click', (ev) => {

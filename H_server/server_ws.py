@@ -26,6 +26,7 @@ import datetime
 from typing import Dict, Any, Set, Optional
 import random
 import logging
+from fastapi import Query
 
 app = FastAPI()
 
@@ -178,7 +179,9 @@ def add_event(room: Dict[str, Any], etype: str, payload: Dict[str, Any]) -> Dict
     - 返却されるイベントには `id`, `type`, `payload`, `ts` が含まれます。
     """
     eid = room["next_event_id"]
-    evt = {"id": eid, "type": etype, "payload": payload, "ts": utcnow_iso()}
+    server_ts = utcnow_iso()
+    # include both legacy `id` and explicit `seq`/`server_ts` for clients
+    evt = {"id": eid, "seq": eid, "type": etype, "payload": payload, "ts": server_ts, "server_ts": server_ts}
     room["events"].append(evt)
     room["next_event_id"] += 1
     if len(room["events"]) > MAX_EVENTS_PER_ROOM:
@@ -396,7 +399,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         # reset penalties at start of new game
                         room["penalties"] = {}
                         room["started"] = True
-                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", [])})
+                        # schedule playback slightly in the future so clients have time to prepare
+                        try:
+                            play_delay_ms = 500
+                            play_at_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(milliseconds=play_delay_ms)
+                            play_at = play_at_dt.isoformat().replace("+00:00", "Z")
+                        except Exception:
+                            play_at = utcnow_iso()
+
+                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", []), "play_at": play_at})
                         # prepare snapshot to broadcast
                         snapshot = {
                             "type": "snapshot",
@@ -601,6 +612,26 @@ async def get_room(room_id: str):
         "next_event_id": r["next_event_id"],
         "started": r.get("started", False),
     }
+
+
+@app.get("/rooms/{room_id}/events")
+async def get_events(room_id: str, since_id: int = Query(0, alias="since_id"), limit: int = Query(100, alias="limit")):
+    """Return events for a room with id > since_id. Limit capped to 1000."""
+    r = rooms.get(room_id)
+    if not r:
+        return JSONResponse(status_code=404, content={"error": "not found"})
+    try:
+        since = int(since_id or 0)
+    except Exception:
+        since = 0
+    try:
+        limit = max(0, min(int(limit or 100), 1000))
+    except Exception:
+        limit = 100
+    evs = [e for e in r.get("events", []) if int(e.get("id", 0)) > since]
+    if limit:
+        evs = evs[:limit]
+    return {"events": evs, "next_event_id": r["next_event_id"]}
 
 
 @app.get("/")
