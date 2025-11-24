@@ -311,6 +311,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 player_id = data.get("player_id")
                 action = data.get("action")
                 payload = data.get("payload", {})
+                # index to notify play_continue for (calculated when a card is taken)
+                play_continue_idx = None
                 async with room["lock"]:
                     found = find_player(room, player_id)
                     if not found:
@@ -328,6 +330,19 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         room["owners"][cid] = player_name
                         evt = add_event(room, "player_action", {"player_id": player_id, "action": action, "payload": {"id": cid, "player": player_name}})
+                        # determine if this taken card corresponds to current play_sequence index
+                        try:
+                            seq = room.get("play_sequence") or []
+                            for i, itm in enumerate(seq):
+                                if isinstance(itm, dict) and itm.get("cardPos") == cid:
+                                    # if this index is the current play index or earlier, signal continue
+                                    # advance room play_idx to next
+                                    if room.get("play_idx", 0) <= i:
+                                        room["play_idx"] = i + 1
+                                        play_continue_idx = i
+                                    break
+                        except Exception:
+                            play_continue_idx = None
                         # After taking, check if enough cards are taken -> finish game
                         taken_count = sum(1 for o in room.get("owners", []) if o)
                         # finish when 9 or more cards have been taken (ユーザ要求)
@@ -436,6 +451,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     if 'fin_evt' in locals():
                         await broadcast(room, {"type": fin_evt["type"], "id": fin_evt["id"], "payload": fin_evt["payload"]})
+                except Exception:
+                    pass
+                # If we determined a play_continue index (card was taken and matches sequence), broadcast it
+                try:
+                    if play_continue_idx is not None:
+                        await broadcast(room, {"type": "play_continue", "index": play_continue_idx})
                 except Exception:
                     pass
                 # if start, broadcast snapshot as well (clients will use play_at to sync start)
