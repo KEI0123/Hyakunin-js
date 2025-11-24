@@ -438,16 +438,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         await broadcast(room, {"type": fin_evt["type"], "id": fin_evt["id"], "payload": fin_evt["payload"]})
                 except Exception:
                     pass
-                # if start, broadcast snapshot as well
+                # if start, broadcast snapshot as well (clients will use play_at to sync start)
                 if action == "start":
                     await broadcast(room, snapshot)
-                    # Additionally, broadcast an explicit play_item for index 0
-                    try:
-                        if room.get("play_sequence") and len(room.get("play_sequence")) > 0:
-                            first = room["play_sequence"][0]
-                            await broadcast(room, {"type": "play_item", "index": 0, "item": first})
-                    except Exception:
-                        pass
             elif t == "become_player":
                 # spectator -> player 昇格リクエスト
                 # クライアント側は通常ボタン押下でこのメッセージを送る
