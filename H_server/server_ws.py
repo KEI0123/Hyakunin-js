@@ -393,14 +393,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             seq.append({"cardPos": None, "letter": int(v)})
                         random.shuffle(seq)
                         room["play_sequence"] = seq
-                        # schedule a synchronized start a few seconds in the future to allow clients to prepare
-                        start_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(milliseconds=3000)
-                        start_at = start_dt.isoformat().replace('+00:00', 'Z')
-                        room["start_at"] = start_at
                         # reset penalties at start of new game
                         room["penalties"] = {}
                         room["started"] = True
-                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", []), "start_at": start_at})
+                        evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", [])})
                         # prepare snapshot to broadcast
                         snapshot = {
                             "type": "snapshot",
@@ -411,7 +407,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "owners": room.get("owners", []),
                                 "card_letters": room.get("card_letters", []),
                                 "play_sequence": room.get("play_sequence", []),
-                                "start_at": room.get("start_at"),
                                 "started": room.get("started", False),
                             },
                             "next_event_id": room["next_event_id"],
@@ -547,14 +542,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
                 # 接続を閉じる
                 break
-            elif t == "ping":
-                # simple clock sync: reply with server time
-                payload = data.get("payload", {}) or {}
-                client_ts = payload.get("client_ts")
-                try:
-                    await websocket.send_json({"type": "pong", "payload": {"client_ts": client_ts, "server_ts": utcnow_iso()}})
-                except Exception:
-                    pass
             else:
                 # 不明なメッセージタイプは無視ではなくエラーで通知する
                 await websocket.send_json({"type": "error", "error": "unknown message type"})
