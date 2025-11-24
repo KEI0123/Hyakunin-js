@@ -158,12 +158,23 @@ class Renderer {
         const oppY = this.canvas.height - cardH - gap;
         // top
         if (my >= topY && my <= topY + cardH) {
-            const idx = Math.floor((mx - startX) / (cardW + gap));
-            if (idx >= 0 && idx < 5) return this.owners[idx] ? -1 : idx;
+            const cellW = cardW + gap; // width of one column including gap
+            const relX = mx - startX;
+            const idx = Math.floor(relX / cellW);
+            if (idx >= 0 && idx < 5) {
+                const cardX = startX + idx * cellW;
+                // ensure mx is within the actual card area (not in the gap)
+                if (mx >= cardX && mx <= cardX + cardW) return this.owners[idx] ? -1 : idx;
+            }
         }
         if (my >= oppY && my <= oppY + cardH) {
-            const idx = Math.floor((mx - startX) / (cardW + gap));
-            if (idx >= 0 && idx < 5) return this.owners[5 + idx] ? -1 : 5 + idx;
+            const cellW = cardW + gap;
+            const relX = mx - startX;
+            const idx = Math.floor(relX / cellW);
+            if (idx >= 0 && idx < 5) {
+                const cardX = startX + idx * cellW;
+                if (mx >= cardX && mx <= cardX + cardW) return this.owners[5 + idx] ? -1 : 5 + idx;
+            }
         }
         return -1;
     }
