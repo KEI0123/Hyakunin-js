@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.pointer = 0;
             this.playing = false;
             this.waitingForTake = false;
+            this.waitingForServer = false;
             this.currentCardPos = null;
             this._preloadAll();
         }
@@ -117,6 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.playing = false;
             this.waitingForTake = false;
             this.currentCardPos = null;
+            // When receiving server sequence, start playback but for off-table items
+            // we will wait for server 'play_continue' after sending our local ack
             if (this.queue.length > 0) this._playCurrent();
         }
 
@@ -129,6 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn('missing audio for', item.letter);
                 // if missing audio for an off-table item, just advance after short delay
                 if (item.cardPos === null) {
+                    // send ack to server if we are a player so server can coordinate
+                    try { if (ws && typeof ws.sendObj === 'function') ws.sendObj({ type: 'play_ack', player_id: myPlayerId || mySpectatorId || null, index: this.pointer }); } catch (e) { }
                     setTimeout(() => { this.pointer++; if (this.pointer < this.queue.length) this._playCurrent(); else this.playing = false; }, 300);
                     return;
                 }
@@ -146,14 +151,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 audio.onended = () => {
                     // clear handler to avoid double calls
                     try { audio.onended = null; } catch (e) { }
-                    setTimeout(() => {
-                        this.pointer++;
-                        if (this.pointer < this.queue.length) this._playCurrent(); else this.playing = false;
-                    }, 300);
+                    // notify server that this client finished playing this off-table item
+                    try { if (ws && typeof ws.sendObj === 'function') ws.sendObj({ type: 'play_ack', player_id: myPlayerId || mySpectatorId || null, index: this.pointer }); } catch (e) { }
+                    // Wait for server 'play_continue' to advance to next item. Server will broadcast when all players ack.
+                    this.waitingForServer = true;
                 };
             } else {
                 this.waitingForTake = true;
             }
+        }
+
+        // Called when server broadcasts that it's okay to continue from index
+        onPlayContinue(index) {
+            try {
+                const idx = Number(index);
+                if (isNaN(idx)) return;
+                // only advance if we're currently waiting for server and index matches current pointer
+                if (this.waitingForServer && this.pointer === idx) {
+                    this.waitingForServer = false;
+                    this.pointer++;
+                    if (this.pointer < this.queue.length) this._playCurrent(); else this.playing = false;
+                }
+            } catch (e) { }
         }
 
         onCardTaken(cardPos) {
@@ -191,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.playing = false;
             this.waitingForTake = false;
             this.currentCardPos = null;
+            this.waitingForServer = false;
         }
     }
 
@@ -589,6 +609,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btnStart) btnStart.style.display = 'none';
         } else if (t === 'error') {
             chat.pushMessage('server', 'error: ' + (msg.error || 'unknown'));
+        } else if (t === 'play_continue') {
+            // server signals that all players have acked for index -> advance audio
+            try { if (audioManager && typeof audioManager.onPlayContinue === 'function') audioManager.onPlayContinue(msg.index); } catch (e) { }
+        } else if (t === 'play_item') {
+            // server asks clients to play item at index (sync start)
+            try {
+                if (audioManager && Array.isArray(audioManager.queue) && typeof msg.index !== 'undefined') {
+                    const idx = Number(msg.index);
+                    if (!isNaN(idx) && idx >= 0 && idx < audioManager.queue.length) {
+                        audioManager.pointer = idx;
+                        audioManager.waitingForServer = false;
+                        if (!audioManager.playing) audioManager._playCurrent();
+                    }
+                }
+            } catch (e) { }
         } else {
             // other events
             // some server events wrap payload differently; try to update owners/card_letters when present

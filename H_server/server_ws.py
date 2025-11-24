@@ -118,6 +118,9 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
         "penalties": {},
         # play_sequence: list of { "cardPos": int|null, "letter": int }
         "play_sequence": [],
+        # play coordination: current index and ack set per index
+        "play_idx": 0,
+        "play_acks": {},
         # whether a game in this room has been started
         "started": False,
         "events": [],
@@ -396,6 +399,9 @@ async def websocket_endpoint(websocket: WebSocket):
                             seq.append({"cardPos": None, "letter": int(v)})
                         random.shuffle(seq)
                         room["play_sequence"] = seq
+                        # reset play coordination
+                        room["play_idx"] = 0
+                        room["play_acks"] = {}
                         # reset penalties at start of new game
                         room["penalties"] = {}
                         room["started"] = True
@@ -435,6 +441,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # if start, broadcast snapshot as well
                 if action == "start":
                     await broadcast(room, snapshot)
+                    # Additionally, broadcast an explicit play_item for index 0
+                    try:
+                        if room.get("play_sequence") and len(room.get("play_sequence")) > 0:
+                            first = room["play_sequence"][0]
+                            await broadcast(room, {"type": "play_item", "index": 0, "item": first})
+                    except Exception:
+                        pass
             elif t == "become_player":
                 # spectator -> player 昇格リクエスト
                 # クライアント側は通常ボタン押下でこのメッセージを送る
@@ -532,6 +545,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         sender_name = data.get("name") or "(anonymous)"
                     evt = add_event(room, "chat_message", {"from": sender_name, "message": msg_text})
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
+            elif t == "play_ack":
+                # data: { type: 'play_ack', player_id: '...', index: N }
+                idx = data.get("index")
+                pid = data.get("player_id")
+                if idx is None or pid is None:
+                    await websocket.send_json({"type": "error", "error": "invalid play_ack"})
+                else:
+                    async with room["lock"]:
+                        # ensure ack set exists for this index
+                        acks = room.get("play_acks") or {}
+                        s = acks.get(str(idx)) or set()
+                        s.add(pid)
+                        acks[str(idx)] = s
+                        room["play_acks"] = acks
+                        # consider only current players as required ack set
+                        player_ids = {p.get("player_id") for p in room.get("players", [])}
+                        # remove any None
+                        player_ids = {x for x in player_ids if x}
+                        # if no players (e.g., only spectators), allow advance
+                        if not player_ids:
+                            ready = True
+                        else:
+                            ready = player_ids.issubset(s)
+                    if ready:
+                        # broadcast play_continue for this index
+                        try:
+                            await broadcast(room, {"type": "play_continue", "index": idx})
+                        except Exception:
+                            pass
             elif t == "leave":
                 # グレースフルな退室処理
                 role = data.get("role")
@@ -556,6 +598,8 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 # 不明なメッセージタイプは無視ではなくエラーで通知する
                 await websocket.send_json({"type": "error", "error": "unknown message type"})
+
+            
 
     except WebSocketDisconnect:
         # treat disconnect as leave
