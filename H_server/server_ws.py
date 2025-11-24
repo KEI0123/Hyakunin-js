@@ -54,6 +54,12 @@ def utcnow_iso() -> str:
         dt = datetime.datetime.now(datetime.timezone.utc)
         return dt.isoformat().replace("+00:00", "Z")
 
+    # ---------------------------------------------------------------------------
+    # ヘルパ関数
+    # サーバー内部で使用する小さなユーティリティ関数群です。
+    # 変更する場合は挙動に注意してください（特に時刻形式など）。
+    # ---------------------------------------------------------------------------
+
 def gen_id(n: int = 6) -> str:
     """
     ランダムな英数字からなる識別子を生成するヘルパ。
@@ -65,6 +71,8 @@ def gen_id(n: int = 6) -> str:
 
 
 def find_player(room: Dict[str, Any], player_id: str) -> Optional[Dict[str, Any]]:
+    # room の players リストから player_id に一致するプレイヤー辞書を返す
+    # 見つからなければ None を返却する
     for p in room.get("players", []):
         if p.get("player_id") == player_id:
             return p
@@ -72,6 +80,7 @@ def find_player(room: Dict[str, Any], player_id: str) -> Optional[Dict[str, Any]
 
 
 def find_spectator(room: Dict[str, Any], spectator_id: str) -> Optional[Dict[str, Any]]:
+    # room の spectators リストから spectator_id に一致する観戦者を返す
     for s in room.get("spectators", []):
         if s.get("spectator_id") == spectator_id:
             return s
@@ -94,6 +103,7 @@ def make_room(max_players: int = 2) -> Dict[str, Any]:
     # このルーム用に 0..99 の中から 10 個のカード ID をランダムに選ぶ
     card_letters = random.sample(list(range(100)), 10)
 
+    # 新しいルーム状態を初期化して返す
     room = {
         "room_id": room_id,
         "created_at": now,
@@ -127,6 +137,7 @@ def create_room_with_id(room_id: str, max_players: int = 2) -> Dict[str, Any]:
         return rooms[room_id]
     now = utcnow_iso()
     card_letters = random.sample(list(range(100)), 10)
+    # 指定の room_id を使ってルームを作る（存在すれば既存のものを返す）
     room = {
         "room_id": room_id,
         "created_at": now,
@@ -174,6 +185,12 @@ def add_event(room: Dict[str, Any], etype: str, payload: Dict[str, Any]) -> Dict
         drop = len(room["events"]) - MAX_EVENTS_PER_ROOM
         room["events"] = room["events"][drop:]
     return evt
+
+# ---------------------------------------------------------------------------
+# ブロードキャスト／WebSocket 処理
+# ここから下はクライアントとの接続受け取り、メッセージ処理、
+# ルーム単位のブロードキャストを行う主要なロジックです。
+# ---------------------------------------------------------------------------
 
 async def broadcast(room: Dict[str, Any], message: Dict[str, Any]):
     """

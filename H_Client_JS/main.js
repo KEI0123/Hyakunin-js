@@ -1,3 +1,10 @@
+// クライアント側エントリポイント
+// このファイルはブラウザ上で動作するクライアントの主要ロジックを含みます。
+// - WebSocket 接続の管理
+// - 描画（Renderer）との連携
+// - オーディオ再生の制御（AudioManager）
+// - UI イベントハンドリング（チャット、ルーム参加、カード取得など）
+// 日本語コメントを追加して可読性を上げています。ロジックは変更していません。
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
     const renderer = new Renderer(canvas);
@@ -32,7 +39,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'room' + (n < 10 ? '0' + n : '' + n);
     }); // map tile->roomId (fixed)
 
-    // AudioManager: preload kiri00..kiri99 and manage sequential playback
+    // AudioManager: 音声ファイルをプリロードし、順次再生を管理するクラス
+    // - onCardTaken 等の外部呼び出しで再生を進めることができる
+    // - サーバー提供の play_sequence をそのまま再生する API を提供する
     class AudioManager {
         constructor(basePath = './dat/wav/kiri/', count = 100, ext = '.wav') {
             this.basePath = basePath;
@@ -186,8 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const audioManager = new AudioManager();
 
-    // Schedule playback so multiple clients can start simultaneously.
-    // seq: play_sequence array, startAt: ISO timestamp string from server (UTC)
+    // 再生スケジュール関係
+    // サーバーから送られる `start_at` を使って、複数クライアントでほぼ同時に再生を開始する。
+    // seq: server の play_sequence 配列, startAt: ISO 形式の UTC 時刻文字列
     function scheduleSequenceStart(seq, startAt) {
         try { audioManager.stop(); } catch (e) { }
         if (!seq) return;
@@ -210,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try { audioManager.startSequenceFromServer(seq); } catch (e) { console.warn('audio start fail', e); }
     }
 
+    // UI ステータス表示を更新するユーティリティ
     function setStatus(s) { statusEl.textContent = s; }
 
     // Lobby rendering: create 10 tiles (5x2)
@@ -344,6 +355,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnBecome.disabled = true;
     }
 
+    // サーバーとの簡易クロック同期用 ping/pong
+    // ping を複数回送って RTT とサーバー時刻との差分を推定する
     function sendPing() {
         if (!ws) return;
         const t0 = Date.now();
@@ -351,6 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try { ws.sendObj({ type: 'ping', payload: { client_ts: t0 } }); } catch (e) { }
     }
 
+    // 複数回の ping を送り中央値で clock offset を算出する
     function syncClock(rounds = 6, spacingMs = 200) {
         _pingSamples.length = 0;
         for (let i = 0; i < rounds; i++) {
@@ -381,6 +395,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnWithdraw.disabled = true;
     }
 
+    // サーバーから受け取ったメッセージを処理する中央ハンドラ
+    // type に応じて snapshot/player_action/chat/game_* 等を処理する
     function handleMessage(msg) {
         const t = msg.type;
         // DEBUG: uncomment to inspect incoming messages

@@ -1,3 +1,6 @@
+// チャット UI ヘルパ
+// - メッセージ領域と参加者表示を管理します
+// - setSendCallback(cb) で送信コールバックを登録します
 class ChatUI {
     constructor() {
         this.messagesEl = document.getElementById('messages');

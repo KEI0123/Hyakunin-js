@@ -1,3 +1,8 @@
+// 簡易 WebSocket ラッパー（ブラウザ用）
+// - JSON メッセージの送受信を簡潔に扱うための小さなユーティリティ
+// - onmessage/onopen/onclose/onerror コールバックをサポート
+// 変更は極力行わず、既存の API を保つようにしています。
+//
 // Simple WebSocket wrapper for browser
 class WSClient {
     constructor() {

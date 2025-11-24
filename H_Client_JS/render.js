@@ -1,3 +1,15 @@
+// Canvas 描画ユーティリティ
+// このモジュールはキャンバス上にカードを描画し、マウス位置からカードIDを
+// 判定するためのヘルパを提供します。描画のスケールはキャンバス幅に依存します。
+// 主な公開メソッド:
+// - setState(owners, cardLetters): レンダー状態をセットして再描画
+// - draw(): 画面を再描画
+// - cardAtPosition(mx,my): マウス座標からカードインデックスを返す（無い場合は -1）
+// 重要: cardAtPosition はカードの実際の幅（gap を除く）でヒット判定します。
+//        これによりカードの間の余白で誤クリックが起きにくくなります。
+//
+// 日本語コメントを追加しています（ロジックは変更していません）。
+//
 // Rendering utilities for canvas-based client
 class Renderer {
     constructor(canvas) {
@@ -157,6 +169,9 @@ class Renderer {
         const cardH = Math.floor(cardW * (740 / 530));
         const oppY = this.canvas.height - cardH - gap;
         // top
+        // 上列の判定: Y がカードの垂直範囲に入るかを先にチェックし、
+        // 次に列インデックス（0..4）を計算して、その列の実際のカード幅内
+        // に mx が含まれるかを判定する。
         if (my >= topY && my <= topY + cardH) {
             const cellW = cardW + gap; // width of one column including gap
             const relX = mx - startX;
@@ -167,6 +182,7 @@ class Renderer {
                 if (mx >= cardX && mx <= cardX + cardW) return this.owners[idx] ? -1 : idx;
             }
         }
+        // 下列も同様の判定ロジック
         if (my >= oppY && my <= oppY + cardH) {
             const cellW = cardW + gap;
             const relX = mx - startX;
