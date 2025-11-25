@@ -291,6 +291,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "card_letters": room.get("card_letters", []),
                 "play_sequence": room.get("play_sequence", []),
                 "started": room.get("started", False),
+                "play_at": room.get("play_at", None),
             },
             "next_event_id": room["next_event_id"],
         }
@@ -427,6 +428,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             play_at = play_at_dt.isoformat().replace("+00:00", "Z")
                         except Exception:
                             play_at = utcnow_iso()
+                        # store play_at in room so late joiners receive synchronization info
+                        room["play_at"] = play_at
 
                         evt = add_event(room, "game_started", {"player_id": player_id, "player": player_name, "play_sequence": room.get("play_sequence", []), "play_at": play_at})
                         # prepare snapshot to broadcast
@@ -440,6 +443,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "card_letters": room.get("card_letters", []),
                                 "play_sequence": room.get("play_sequence", []),
                                 "started": room.get("started", False),
+                                "play_at": room.get("play_at", None),
                             },
                             "next_event_id": room["next_event_id"],
                         }
@@ -501,7 +505,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # notify the requester and broadcast
                 await websocket.send_json({"type": "promoted", "you": client_meta})
                 # optional: send updated snapshot to the promoted client
-                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", [])}, "next_event_id": room["next_event_id"]})
+                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", []), "play_sequence": room.get("play_sequence", []), "started": room.get("started", False), "play_at": room.get("play_at", None)}, "next_event_id": room["next_event_id"]})
                 await broadcast(room, {"type": evt["type"], "id": evt["id"], "payload": evt["payload"]})
             elif t == "become_spectator":
                 # player -> spectator 昇格（退席して観覧者になる）
@@ -532,7 +536,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     evt_spec = add_event(room, "spectator_joined", {"spectator_id": spectator_id, "name": pname})
                 # notify requester and broadcast
                 await websocket.send_json({"type": "demoted", "you": client_meta})
-                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", [])}, "next_event_id": room["next_event_id"]})
+                await websocket.send_json({"type": "snapshot", "room": {"room_id": room["room_id"], "players": room["players"], "spectators": room["spectators"], "owners": room.get("owners", []), "card_letters": room.get("card_letters", []), "play_sequence": room.get("play_sequence", []), "started": room.get("started", False), "play_at": room.get("play_at", None)}, "next_event_id": room["next_event_id"]})
                 await broadcast(room, {"type": evt_left["type"], "id": evt_left["id"], "payload": evt_left["payload"]})
                 await broadcast(room, {"type": evt_spec["type"], "id": evt_spec["id"], "payload": evt_spec["payload"]})
             elif t == "chat":

@@ -427,9 +427,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (t === 'snapshot') {
             const room = msg.room || {};
-            // Do not immediately display snapshot cards until the game is started.
-            // Store snapshot and apply when started.
-            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null };
+            // Store snapshot. If the room is already started on server, apply immediately
+            pendingSnapshot = { owners: room.owners || [], card_letters: room.card_letters || [], play_sequence: room.play_sequence || null, play_at: room.play_at || null };
+            // reflect server-side started state for late joiners (spectators)
+            try { started = !!room.started; } catch (e) { started = started; }
             // conservatively track last seen event id from snapshot's next_event_id
             try {
                 if (typeof msg.next_event_id !== 'undefined' && msg.next_event_id !== null) {
@@ -442,8 +443,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (started) {
                 renderer.setState(pendingSnapshot.owners, pendingSnapshot.card_letters);
                 try {
-                    if (room.play_sequence) audioManager.startSequenceFromServer(room.play_sequence);
-                    else audioManager.startSequence(pendingSnapshot.card_letters || [], pendingSnapshot.owners || []);
+                    const seq = room.play_sequence || pendingSnapshot.play_sequence || null;
+                    const playAt = room.play_at || pendingSnapshot.play_at || null;
+                    scheduleSequenceStart(seq, playAt);
                 } catch (e) { console.warn('audio start fail', e); }
             }
             // players -> array of [player_id, name]
