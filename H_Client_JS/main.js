@@ -445,7 +445,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const seq = room.play_sequence || pendingSnapshot.play_sequence || null;
                     const playAt = room.play_at || pendingSnapshot.play_at || null;
-                    scheduleSequenceStart(seq, playAt);
+                    const playIdx = (typeof room.play_idx !== 'undefined' ? room.play_idx : (typeof pendingSnapshot.play_idx !== 'undefined' ? pendingSnapshot.play_idx : 0));
+                    // If we're a player, start playback as before. If spectator, load sequence but do not start audio until server signals.
+                    if (myRole === 'player') {
+                        scheduleSequenceStart(seq, playAt);
+                    } else {
+                        // load queue without autoplay: set queue and pointer, set waitingForServer so we only advance when server sends play_continue
+                        try {
+                            if (Array.isArray(seq) && seq.length > 0) {
+                                audioManager.stop();
+                                audioManager.queue = seq.map(it => ({ cardPos: (typeof it.cardPos === 'number' ? it.cardPos : null), letter: (it.letter | 0) }));
+                                audioManager.pointer = Number(playIdx) || 0;
+                                audioManager.playing = false;
+                                audioManager.waitingForServer = true;
+                            }
+                        } catch (e) { console.warn('spectator load seq fail', e); }
+                    }
                 } catch (e) { console.warn('audio start fail', e); }
             }
             // players -> array of [player_id, name]
