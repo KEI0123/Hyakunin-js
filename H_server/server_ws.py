@@ -19,6 +19,7 @@ WebSocket ベースのプロトタイプサーバー
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import secrets
 import string
@@ -29,6 +30,15 @@ import logging
 from fastapi import Query
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+    "https://hyakunin-js.vercel.app"],  # or ["http://localhost:8000"] etc.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # simple logger for the module
 logger = logging.getLogger("server_ws")
