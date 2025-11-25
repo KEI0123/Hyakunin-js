@@ -394,6 +394,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (t === 'joined') {
             roomId = msg.room_id;
             const you = msg.you || {};
+            // Clear per-room event dedupe state when joining a new room
+            try { appliedEventIds.clear(); } catch (e) { appliedEventIds = new Set(); }
+            lastSeenEventId = 0;
             if (you.player_id) myPlayerId = you.player_id;
             if (you.spectator_id) mySpectatorId = you.spectator_id;
             myRole = you.player_id ? 'player' : (you.spectator_id ? 'spectator' : '');
